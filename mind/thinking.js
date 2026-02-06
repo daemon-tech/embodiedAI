@@ -311,9 +311,12 @@ class Thinking {
     const goals = (this.memory.getGoals && this.memory.getGoals(true)) || [];
     const working = (this.memory.getWorkingContext && this.memory.getWorkingContext()) || {};
     const plan = (this.memory.getPlan && this.memory.getPlan()) || {};
-    const episodesRaw = (this.memory.getRelevantEpisodes && this.memory.getRelevantEpisodes(5)) || [];
+    const activeRetrieval = !!(working.lastError && String(working.lastError).trim());
+    const episodesN = activeRetrieval ? 10 : 5;
+    const factsN = activeRetrieval ? 15 : 10;
+    const episodesRaw = (this.memory.getRelevantEpisodes && this.memory.getRelevantEpisodes(episodesN)) || [];
     const episodes = episodesRaw.map(e => (e.summary || e.what || e.type || 'event') + (e.where ? ' @ ' + e.where : '')).map(s => String(s).slice(0, 80));
-    const factsRaw = (this.memory.getRecentFacts && this.memory.getRecentFacts(10)) || [];
+    const factsRaw = (this.memory.getRecentFacts && this.memory.getRecentFacts(factsN)) || [];
     const facts = factsRaw.map(f => (f.fact || '').slice(0, 80));
     const selfInstructions = this.memory.getSelfInstructions(7);
 
