@@ -1,5 +1,5 @@
 /**
- * Laura-style core: teal orb in dark space. Motion and glow per state.
+ * Laura-style core: cyberpunk red orb in dark space. Motion and glow per state.
  * window.scene3d = { init, update, resize, setMode, cleanup }.
  */
 (function() {
@@ -24,18 +24,18 @@
     phase: o.phase,
   }));
 
-  const TEAL = [0, 0.78, 0.71];   // #00c8b4
-  const TEAL_DIM = [0, 0.65, 0.6]; // rest / calmer
+  const RED = [1, 0, 0.25];        // #ff0040 neon red
+  const RED_DIM = [0.85, 0, 0.2]; // rest / calmer
   const MODES = {
-    idle:      { rotSpeed: 0.2, floatAmp: 0.06, floatFreq: 0.6, pulse: 0, scale: 1, emissive: 0.2, glow: 0.1, ringScale: 0, color: TEAL },
-    think:     { rotSpeed: 0.8, floatAmp: 0.04, floatFreq: 1.5, pulse: 0.08, scale: 1.05, emissive: 0.4, glow: 0.22, ringScale: 1.1, color: TEAL },
-    read_file: { rotSpeed: 0.5, floatAmp: 0.02, floatFreq: 2, pulse: 0.06, scale: 1.02, emissive: 0.45, glow: 0.25, ringScale: 1.15, color: TEAL },
-    list_dir:  { rotSpeed: 0.6, floatAmp: 0.05, floatFreq: 1.2, pulse: 0.05, scale: 1.03, emissive: 0.35, glow: 0.18, ringScale: 1.08, color: TEAL },
-    fetch_url: { rotSpeed: 1, floatAmp: 0.08, floatFreq: 1.8, pulse: 0.1, scale: 1.06, emissive: 0.5, glow: 0.28, ringScale: 1.2, color: TEAL },
-    browse:    { rotSpeed: 0.9, floatAmp: 0.07, floatFreq: 1.6, pulse: 0.09, scale: 1.05, emissive: 0.45, glow: 0.22, ringScale: 1.18, color: TEAL },
-    write_journal: { rotSpeed: 0.4, floatAmp: 0.03, floatFreq: 0.9, pulse: 0.04, scale: 1.02, emissive: 0.4, glow: 0.2, ringScale: 1.12, color: TEAL_DIM },
-    rest:      { rotSpeed: 0.08, floatAmp: 0.03, floatFreq: 0.4, pulse: 0.02, scale: 0.92, emissive: 0.12, glow: 0.05, ringScale: 0, color: TEAL_DIM },
-    read_self: { rotSpeed: 0.6, floatAmp: 0.04, floatFreq: 1.2, pulse: 0.07, scale: 1.04, emissive: 0.45, glow: 0.24, ringScale: 1.15, color: TEAL },
+    idle:      { rotSpeed: 0.2, floatAmp: 0.06, floatFreq: 0.6, pulse: 0, scale: 1, emissive: 0.2, glow: 0.1, ringScale: 0, color: RED },
+    think:     { rotSpeed: 0.8, floatAmp: 0.04, floatFreq: 1.5, pulse: 0.08, scale: 1.05, emissive: 0.45, glow: 0.25, ringScale: 1.1, color: RED },
+    read_file: { rotSpeed: 0.5, floatAmp: 0.02, floatFreq: 2, pulse: 0.06, scale: 1.02, emissive: 0.5, glow: 0.28, ringScale: 1.15, color: RED },
+    list_dir:  { rotSpeed: 0.6, floatAmp: 0.05, floatFreq: 1.2, pulse: 0.05, scale: 1.03, emissive: 0.4, glow: 0.2, ringScale: 1.08, color: RED },
+    fetch_url: { rotSpeed: 1, floatAmp: 0.08, floatFreq: 1.8, pulse: 0.1, scale: 1.06, emissive: 0.55, glow: 0.3, ringScale: 1.2, color: RED },
+    browse:    { rotSpeed: 0.9, floatAmp: 0.07, floatFreq: 1.6, pulse: 0.09, scale: 1.05, emissive: 0.5, glow: 0.25, ringScale: 1.18, color: RED },
+    write_journal: { rotSpeed: 0.4, floatAmp: 0.03, floatFreq: 0.9, pulse: 0.04, scale: 1.02, emissive: 0.45, glow: 0.22, ringScale: 1.12, color: RED_DIM },
+    rest:      { rotSpeed: 0.08, floatAmp: 0.03, floatFreq: 0.4, pulse: 0.02, scale: 0.92, emissive: 0.15, glow: 0.06, ringScale: 0, color: RED_DIM },
+    read_self: { rotSpeed: 0.6, floatAmp: 0.04, floatFreq: 1.2, pulse: 0.07, scale: 1.04, emissive: 0.5, glow: 0.26, ringScale: 1.15, color: RED },
   };
 
   function getMode() {
@@ -48,28 +48,28 @@
     const THREE = window.THREE;
     clock = new THREE.Clock();
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0c0e12);
-    scene.fog = new THREE.FogExp2(0x0c0e12, 0.014);
+    scene.background = new THREE.Color(0x0a0608);
+    scene.fog = new THREE.FogExp2(0x0a0608, 0.016);
 
     camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
     camera.position.set(0, 0, 5);
     camera.lookAt(0, 0, 0);
 
-    const ambient = new THREE.AmbientLight(0x12181a, 0.45);
+    const ambient = new THREE.AmbientLight(0x1a0808, 0.4);
     scene.add(ambient);
-    const key = new THREE.DirectionalLight(0x00c8b4, 0.6);
+    const key = new THREE.DirectionalLight(0xff0040, 0.7);
     key.position.set(5, 5, 5);
     scene.add(key);
-    const fill = new THREE.DirectionalLight(0x00a89a, 0.18);
+    const fill = new THREE.DirectionalLight(0xff2060, 0.2);
     fill.position.set(-4, 2, 3);
     scene.add(fill);
 
     const orbGeo = new THREE.SphereGeometry(0.55, 48, 48);
     const orbMat = new THREE.MeshStandardMaterial({
-      color: 0x00c8b4,
-      emissive: 0x003d38,
-      metalness: 0.7,
-      roughness: 0.25,
+      color: 0xff0040,
+      emissive: 0x400010,
+      metalness: 0.75,
+      roughness: 0.2,
     });
     orb = new THREE.Mesh(orbGeo, orbMat);
     orb.castShadow = true;
@@ -77,9 +77,9 @@
 
     const glowGeo = new THREE.SphereGeometry(0.62, 32, 32);
     const glowMat = new THREE.MeshBasicMaterial({
-      color: 0x00e6d2,
+      color: 0xff2060,
       transparent: true,
-      opacity: 0.14,
+      opacity: 0.16,
       wireframe: true,
     });
     orbGlow = new THREE.Mesh(glowGeo, glowMat);
@@ -87,9 +87,9 @@
 
     const ringGeo = new THREE.RingGeometry(0.7, 0.85, 32);
     const ringMat = new THREE.MeshBasicMaterial({
-      color: 0x00e6d2,
+      color: 0xff2060,
       transparent: true,
-      opacity: 0.25,
+      opacity: 0.3,
       side: THREE.DoubleSide,
     });
     ring = new THREE.Mesh(ringGeo, ringMat);
@@ -102,12 +102,12 @@
     neuralGroup = new THREE.Group();
     const nodeGeo = new THREE.SphereGeometry(0.08, 16, 16);
     const nodeMat = new THREE.MeshBasicMaterial({
-      color: 0x00e6d2,
+      color: 0xff2060,
       transparent: true,
       opacity: 0.85,
     });
     const lineMat = new THREE.LineBasicMaterial({
-      color: 0x00c8b4,
+      color: 0xff0040,
       transparent: true,
       opacity: 0.5,
     });
@@ -125,10 +125,10 @@
 
     const gridGeo = new THREE.PlaneGeometry(35, 35, 35, 35);
     const gridMat = new THREE.MeshBasicMaterial({
-      color: 0x00c8b4,
+      color: 0xff0040,
       wireframe: true,
       transparent: true,
-      opacity: 0.06,
+      opacity: 0.07,
     });
     gridHelper = new THREE.Mesh(gridGeo, gridMat);
     gridHelper.rotation.x = -Math.PI / 2;

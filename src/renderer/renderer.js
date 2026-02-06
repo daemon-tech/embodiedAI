@@ -321,12 +321,12 @@
       if (el) { el.style.width = pct(v) + '%'; if (color) el.style.background = color; }
     };
     const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = (v ?? 0).toFixed(2); };
-    setBar('dmini-d-fill', h.dopamine, '#3fb950'); setVal('v-dopamine', h.dopamine);
-    setBar('dmini-c-fill', h.cortisol, '#f85149'); setVal('v-cortisol', h.cortisol);
-    setBar('dmini-s-fill', h.serotonin, '#d29922'); setVal('v-serotonin', h.serotonin);
-    setBar('emo-joy', e.joy, '#3fb950'); setVal('v-joy', e.joy);
-    setBar('emo-interest', e.interest, '#d29922'); setVal('v-interest', e.interest);
-    setBar('emo-frustration', e.frustration, '#f85149'); setVal('v-frustration', e.frustration);
+    setBar('dmini-d-fill', h.dopamine, '#00ff88'); setVal('v-dopamine', h.dopamine);
+    setBar('dmini-c-fill', h.cortisol, '#ff3355'); setVal('v-cortisol', h.cortisol);
+    setBar('dmini-s-fill', h.serotonin, '#ffaa00'); setVal('v-serotonin', h.serotonin);
+    setBar('emo-joy', e.joy, '#00ff88'); setVal('v-joy', e.joy);
+    setBar('emo-interest', e.interest, '#ffaa00'); setVal('v-interest', e.interest);
+    setBar('emo-frustration', e.frustration, '#ff3355'); setVal('v-frustration', e.frustration);
     setBar('emo-confusion', e.confusion, '#9e9e9e'); setVal('v-confusion', e.confusion);
     const nEl = document.getElementById('v-neurons');
     const synEl = document.getElementById('v-synapses');

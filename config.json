@@ -19,7 +19,7 @@
   "thinkIntervalMs": 8000,
   "minIntervalMs": 2000,
   "maxIntervalMs": 25000,
-  "continuousMode": false,
+  "continuousMode": true,
   "curiosityWeight": 0.9,
   "maxFileSizeBytes": 1048576,
   "maxHttpResponseBytes": 1048576,
@@ -43,7 +43,6 @@
   "metaReviewEveryTicks": 20,
   "runawaySameActionThreshold": 6,
   "runawayConsecutiveErrors": 3,
-  "appPath": "D:\\code-space\\embodiedAI",
   "dryRun": false,
   "curiosityDepth": 3,
   "archiveEveryTicks": 100,
@@ -54,5 +53,6 @@
   "chatHistoryCap": 300,
   "maxChatMessageChars": 1000,
   "hormoneResetCortisolThreshold": 0.9,
-  "hormoneResetTicks": 10
+  "hormoneResetTicks": 10,
+  "appPath": "D:\\code-space\\embodiedAI"
 }
