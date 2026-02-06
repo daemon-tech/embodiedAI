@@ -572,6 +572,19 @@ class MindLoop {
       }
 
       const stats = this.memory.getStats();
+      this.memory.appendActionTrace({
+        t: Date.now(),
+        reason: action.reason,
+        type: action.type,
+        path: logPayload.path != null ? logPayload.path : action.path,
+        command: logPayload.command != null ? logPayload.command : action.command,
+        url: logPayload.url != null ? logPayload.url : action.url,
+        target: logPayload.target != null ? logPayload.target : action.target,
+        ok: logPayload.ok,
+        error: logPayload.error,
+        stdout: logPayload.stdout != null ? String(logPayload.stdout).slice(0, 500) : undefined,
+        thought,
+      });
       this.sendToRenderer('thought', {
         thought,
         action: action.type,
@@ -599,6 +612,18 @@ class MindLoop {
       try { await this.thinking.replan('tick error: ' + err.message); } catch (_) {}
       thought = `Something went wrong: ${err.message}. I'll try again.`;
       this.memory.addThought(thought, { action: (action && action.type) || 'think', error: true });
+      this.memory.appendActionTrace({
+        t: Date.now(),
+        reason: (action && action.reason) || '',
+        type: (action && action.type) || 'think',
+        path: action && action.path,
+        command: action && action.command,
+        url: action && action.url,
+        target: action && action.target,
+        ok: false,
+        error: err.message,
+        thought,
+      });
       this.sendToRenderer('thought', {
         thought,
         action: (action && action.type) || 'think',

@@ -17,6 +17,7 @@ const MAX_SEMANTIC_FACTS = 500;
 const MAX_GOALS = 20;
 const MAX_LAST_ACTIONS = 12;
 const MAX_RECENT_LEARNINGS = 20;
+const MAX_ACTION_TRACE = 200;
 const STRENGTHEN_ON_USE = 0.04;
 const STRENGTHEN_CONNECTION = 0.06;
 const WEAKEN_ON_FAILURE = 0.03;
@@ -49,6 +50,7 @@ class Memory {
     this.brainFilePath = brainFilePath || null;
     this.archiveFilePath = archiveFilePath || path.join(path.dirname(filePath), 'archive.json.gz');
     this.auditLogPath = auditLogPath || path.join(path.dirname(filePath), 'audit_log.json');
+    this._actionTrace = [];
     this.data = {
       exploredPaths: {},
       exploredUrls: {},
@@ -363,6 +365,30 @@ class Memory {
   addLog(type, payload = {}) {
     this.data.logs.push({ t: Date.now(), type, ...payload });
     if (this.data.logs.length > MAX_LOGS) this.data.logs.shift();
+  }
+
+  /** Full trace of every tick (decide → execute → reflect) for backtrace/debug. Not persisted. */
+  appendActionTrace(entry) {
+    if (!entry || typeof entry !== 'object') return;
+    this._actionTrace.push({
+      t: entry.t != null ? entry.t : Date.now(),
+      reason: entry.reason != null ? String(entry.reason).slice(0, 300) : '',
+      type: entry.type || '',
+      path: entry.path != null ? String(entry.path).slice(0, 260) : undefined,
+      command: entry.command != null ? String(entry.command).slice(0, 300) : undefined,
+      url: entry.url != null ? String(entry.url).slice(0, 260) : undefined,
+      target: entry.target != null ? String(entry.target).slice(0, 100) : undefined,
+      ok: entry.ok,
+      error: entry.error != null ? String(entry.error).slice(0, 400) : undefined,
+      stdout: entry.stdout != null ? String(entry.stdout).slice(0, 500) : undefined,
+      thought: entry.thought != null ? String(entry.thought).slice(0, 400) : '',
+    });
+    if (this._actionTrace.length > MAX_ACTION_TRACE) this._actionTrace.shift();
+  }
+
+  getActionTrace(n = 150) {
+    const arr = this._actionTrace || [];
+    return arr.slice(-n);
   }
 
   addInnerThought(text) {

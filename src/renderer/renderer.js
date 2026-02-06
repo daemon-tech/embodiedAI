@@ -228,7 +228,10 @@
     const text = (msg && msg.thought != null) ? String(msg.thought).trim() : (typeof msg === 'string' ? msg : '');
     const reason = (msg && msg.reason != null) ? String(msg.reason).trim() : '';
     const action = (msg && msg.action != null) ? msg.action : (typeof msg === 'object' ? '' : '');
-    if (currentThought) currentThought.textContent = text || '—';
+    if (currentThought) {
+      currentThought.textContent = text || 'Idle';
+      currentThought.classList.toggle('is-idle', !text);
+    }
     const reasonEl = document.getElementById('current-reason');
     if (reasonEl) {
       reasonEl.textContent = reason ? 'Live reasoning: ' + reason : '';
@@ -285,12 +288,29 @@
     v('v-last-tick-ms', m.latency && m.latency.lastTickMs != null ? m.latency.lastTickMs : null);
   }
 
-  let lastLivingState = { stats: {}, living: {} };
+  let lastLivingState = { hormones: {}, emotions: {}, stats: {}, living: {} };
+
+  function updateMindCore(state) {
+    if (!state) state = lastLivingState;
+    const h = state.hormones || {};
+    const e = state.emotions || {};
+    const s = state.stats || {};
+    const pct = (v) => Math.round(Math.min(1, Math.max(0, (v ?? 0.5))) * 100) + '%';
+    const setBar = (id, v) => { const el = document.getElementById(id); if (el) el.style.width = pct(v); };
+    setBar('core-dopamine', h.dopamine);
+    setBar('core-cortisol', h.cortisol);
+    setBar('core-serotonin', h.serotonin);
+    const setStat = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = (v ?? 0); };
+    setStat('core-neurons', s.neurons);
+    setStat('core-synapses', s.synapses);
+    setStat('core-thoughts', s.thoughts);
+  }
 
   function updateVitalsDrawer(state) {
     if (!state) state = lastLivingState;
     const s = state.stats || {};
     const liv = state.living || {};
+    updateMindCore(state);
     const nEl = document.getElementById('v-neurons');
     const synEl = document.getElementById('v-synapses');
     const thEl = document.getElementById('v-thoughts');
@@ -368,6 +388,8 @@
     setCurrentThought(msg);
     appendStep(msg);
     lastLivingState = {
+      hormones: msg.hormones || lastLivingState.hormones,
+      emotions: msg.emotions || lastLivingState.emotions,
       stats: msg.stats || lastLivingState.stats,
       living: msg.living || lastLivingState.living,
     };
@@ -682,6 +704,19 @@
           lines.push(info.lastError);
           lines.push('');
         }
+        if (info && info.actionTrace && info.actionTrace.length > 0) {
+          lines.push('## Full trace (everything Laura did — backtrace)');
+          info.actionTrace.forEach((e, i) => {
+            const ts = e.t != null ? new Date(e.t).toISOString() : '';
+            lines.push('---');
+            lines.push('[' + (i + 1) + '] ' + ts + '  ' + (e.type || '') + (e.path ? ' path=' + e.path : '') + (e.command ? ' command=' + String(e.command).slice(0, 120) : '') + (e.url ? ' url=' + e.url : '') + (e.target ? ' target=' + e.target : ''));
+            if (e.reason) lines.push('  reason: ' + e.reason);
+            lines.push('  outcome: ' + (e.ok ? 'ok' : 'error') + (e.error ? ' — ' + e.error : ''));
+            if (e.stdout) lines.push('  stdout: ' + e.stdout.replace(/\n/g, ' ').slice(0, 200));
+            if (e.thought) lines.push('  thought: ' + e.thought);
+          });
+          lines.push('');
+        }
         if (info && info.activity) {
           lines.push('## Current activity');
           lines.push(typeof info.activity === 'string' ? info.activity : JSON.stringify(info.activity));
@@ -772,7 +807,10 @@
           streamEl.style.display = text ? 'block' : 'none';
           streamEl.classList.toggle('streaming', !done);
         }
-        if (done && currentEl) currentEl.textContent = text ? text.slice(0, 500) : '—';
+        if (done && currentEl) {
+          currentEl.textContent = text ? text.slice(0, 500) : 'Idle';
+          currentEl.classList.toggle('is-idle', !text);
+        }
         if (done && liveThoughtEl) liveThoughtEl.textContent = text ? text.slice(0, 300) : '—';
         if (done && streamEl) streamEl.style.display = 'none';
       } else if (phase === 'chat') {
@@ -895,7 +933,7 @@
     try {
       const living = await window.api.getLivingState();
       if (living) {
-        lastLivingState = { stats: living.stats || {}, living: living.living || {} };
+        lastLivingState = { hormones: living.hormones || {}, emotions: living.emotions || {}, stats: living.stats || {}, living: living.living || {} };
         updateVitalsDrawer(lastLivingState);
         const st = living.loopStatus;
         if (statusDot && statusText) {
@@ -980,6 +1018,71 @@
         t.setAttribute('aria-label', 'Collapse panel');
       }
     });
+  }
+
+  document.querySelectorAll('.rail-main-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const railName = tab.dataset.rail;
+      document.querySelectorAll('.rail-main-tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+      document.querySelectorAll('.rail-pane').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      tab.setAttribute('aria-selected', 'true');
+      const pane = document.getElementById('rail-' + railName);
+      if (pane) pane.classList.add('active');
+    });
+  });
+
+  const terminalTabsEl = document.getElementById('terminal-tabs');
+  const terminalContentEl = document.getElementById('terminal-content');
+  const terminalTabAddBtn = document.getElementById('terminal-tab-add');
+  let terminalTabCount = 0;
+  const terminalTabs = [{ id: 'laura', title: 'Laura', pane: terminalContentEl && terminalContentEl.querySelector('[data-terminal-id="laura"]') }];
+  function addTerminalTab(title) {
+    if (!terminalContentEl) return;
+    terminalTabCount++;
+    const id = 'pty-' + terminalTabCount;
+    const pane = document.createElement('div');
+    pane.className = 'terminal-tab-pane';
+    pane.dataset.terminalId = id;
+    pane.innerHTML = '<div class="terminal-pty-placeholder">PowerShell terminal — add node-pty + xterm for live shell</div>';
+    terminalContentEl.appendChild(pane);
+    const tabEl = document.createElement('div');
+    tabEl.className = 'terminal-tab';
+    tabEl.dataset.terminalId = id;
+    tabEl.innerHTML = '<span class="terminal-tab-title">' + escapeHtml(title || 'PowerShell ' + terminalTabCount) + '</span><button type="button" class="terminal-tab-close" aria-label="Close">×</button>';
+    const titleEl = tabEl.querySelector('.terminal-tab-title');
+    const closeBtn = tabEl.querySelector('.terminal-tab-close');
+    closeBtn.addEventListener('click', (e) => { e.stopPropagation(); removeTerminalTab(id); });
+    tabEl.addEventListener('click', () => { switchTerminalTab(id); });
+    terminalTabs.push({ id, title: title || ('PowerShell ' + terminalTabCount), pane, tabEl });
+    if (terminalTabsEl) terminalTabsEl.appendChild(tabEl);
+    switchTerminalTab(id);
+  }
+  function removeTerminalTab(id) {
+    if (id === 'laura' || terminalTabs.length <= 1) return;
+    const idx = terminalTabs.findIndex(t => t.id === id);
+    if (idx === -1) return;
+    const t = terminalTabs[idx];
+    terminalTabs.splice(idx, 1);
+    if (t.tabEl && t.tabEl.parentNode) t.tabEl.parentNode.removeChild(t.tabEl);
+    if (t.pane && t.pane.parentNode) t.pane.parentNode.removeChild(t.pane);
+    if (terminalTabs.length > 0) switchTerminalTab(terminalTabs[0].id);
+  }
+  function switchTerminalTab(id) {
+    terminalTabs.forEach(t => {
+      if (t.tabEl) t.tabEl.classList.toggle('active', t.id === id);
+      if (t.pane) t.pane.classList.toggle('active', t.id === id);
+    });
+  }
+  if (terminalTabsEl && terminalContentEl) {
+    const lauraTab = document.createElement('div');
+    lauraTab.className = 'terminal-tab active';
+    lauraTab.dataset.terminalId = 'laura';
+    lauraTab.innerHTML = '<span class="terminal-tab-title">Laura</span>';
+    lauraTab.addEventListener('click', () => { switchTerminalTab('laura'); });
+    terminalTabsEl.appendChild(lauraTab);
+    terminalTabs[0].tabEl = lauraTab;
+    if (terminalTabAddBtn) terminalTabAddBtn.addEventListener('click', () => addTerminalTab('PowerShell ' + (terminalTabCount + 1)));
   }
 
   function cleanup() {

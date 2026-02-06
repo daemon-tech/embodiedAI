@@ -5,8 +5,8 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "serve-legacy": "npx serve . -p 3000",
-    "test": "node test/allow.test.js && node test/memory.test.js && node test/thinking.test.js"
+    "test": "node test/allow.test.js && node test/memory.test.js && node test/thinking.test.js",
+    "serve-legacy": "npx serve . -p 3000"
   },
   "keywords": ["ai", "autonomous", "curiosity", "electron"],
   "author": "",
@@ -15,6 +15,7 @@
     "electron": "^33.0.0"
   },
   "dependencies": {
+    "node-pty": "^1.0.0",
     "node-fetch": "^3.3.2",
     "extract-zip": "^2.0.1",
     "tar": "^6.2.0"

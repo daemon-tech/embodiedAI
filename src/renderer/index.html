@@ -146,10 +146,46 @@
     }
     .panel-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
 
-    /* ─── Left: Mind panel ─── */
-    .rail { width: 300px; flex-shrink: 0; }
+    /* ─── Left: Mind / Terminal panel ─── */
+    .rail { width: 320px; flex-shrink: 0; }
     .rail.collapsed { width: 0; min-width: 0; opacity: 0; pointer-events: none; overflow: hidden; }
-    .rail .panel-body { overflow-y: auto; display: flex; flex-direction: column; gap: 0; }
+    .rail .panel-body { overflow: hidden; display: flex; flex-direction: column; gap: 0; }
+    .rail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .rail-main-tabs { display: flex; gap: 2px; }
+    .rail-main-tab { padding: 6px 12px; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.1em; color: var(--muted); background: transparent; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; transition: all 0.2s; }
+    .rail-main-tab:hover { color: var(--text-dim); }
+    .rail-main-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .rail-pane { display: none; flex: 1; overflow: hidden; flex-direction: column; min-height: 0; }
+    .rail-pane.active { display: flex; }
+    #rail-mind { padding-top: 8px; overflow-y: auto; }
+    .mind-card { padding: 12px 14px; border-radius: var(--radius-md); margin: 0 10px 10px; background: var(--surface); border: 1px solid var(--border); }
+    .mind-core { margin-top: 0; padding: 12px 14px; }
+    .mind-core-bars { display: flex; gap: 14px; margin-bottom: 10px; }
+    .mind-core-bar-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+    .mind-core-bar-label { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; color: var(--muted); margin: 0; }
+    .mind-core-bar { height: 6px; background: var(--bg-panel); border-radius: 3px; overflow: hidden; }
+    .mind-core-fill { height: 100%; border-radius: 3px; transition: width 0.35s ease-out; }
+    .mind-core-fill.mind-core-d { background: linear-gradient(90deg, #0d5c3a, var(--success)); }
+    .mind-core-fill.mind-core-c { background: linear-gradient(90deg, #5c1a1a, var(--danger)); }
+    .mind-core-fill.mind-core-s { background: linear-gradient(90deg, #5c4a0d, var(--warn)); }
+    .mind-core-stats { display: flex; align-items: baseline; gap: 6px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
+    .mind-stat { color: var(--accent); font-weight: 500; }
+    .mind-stat-sep { color: var(--muted); font-size: 9px; letter-spacing: 0.02em; }
+    .terminal-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--bg-panel); }
+    .terminal-tab-bar { display: flex; align-items: center; border-bottom: 1px solid var(--border); background: var(--surface-elevated); min-height: 36px; }
+    .terminal-tabs { display: flex; flex: 1; overflow-x: auto; }
+    .terminal-tab { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); background: var(--surface); border-right: 1px solid var(--border); cursor: pointer; transition: background 0.2s, color 0.2s; white-space: nowrap; }
+    .terminal-tab:hover { color: var(--text); background: var(--surface-elevated); }
+    .terminal-tab.active { color: var(--accent); background: var(--bg-panel); border-bottom: 1px solid var(--bg-panel); margin-bottom: -1px; }
+    .terminal-tab-close { padding: 2px 6px; font-size: 12px; line-height: 1; color: var(--muted); background: transparent; border: none; cursor: pointer; border-radius: 2px; }
+    .terminal-tab-close:hover { color: var(--danger); background: rgba(255,51,85,0.15); }
+    .terminal-tab-add { width: 28px; height: 28px; margin: 4px 6px; font-size: 16px; line-height: 1; color: var(--muted); background: transparent; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; transition: all 0.2s; flex-shrink: 0; }
+    .terminal-tab-add:hover { color: var(--accent); border-color: var(--accent); }
+    .terminal-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; background: #0d1117; }
+    .terminal-tab-pane { display: none; flex: 1; overflow: hidden; flex-direction: column; min-height: 0; padding: 8px; }
+    .terminal-tab-pane.active { display: flex; }
+    .terminal-tab-pane .terminal-log { flex: 1; min-height: 200px; max-height: none; }
+    .terminal-pty-placeholder { padding: 12px; color: var(--text-dim); font-family: var(--font-mono); font-size: 11px; }
     .rail-toggle { background: none; border: none; color: var(--muted); cursor: pointer; padding: 2px 4px; font-size: 11px; line-height: 1; transition: color 0.2s; }
     .rail-toggle:hover { color: var(--accent); }
     .rail-toggle-restore { display: none; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); z-index: 5; background: var(--bg-panel); border: 1px solid var(--border); color: var(--accent); padding: 6px 10px; font-size: 9px; font-family: var(--font-mono); cursor: pointer; border-radius: var(--radius-sm); align-items: center; gap: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
@@ -157,33 +193,29 @@
     .main.rail-collapsed .rail-toggle-restore { display: flex; }
     .mind-section { margin-bottom: 0; }
     .mind-section-title { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; padding: 0 2px; }
-    .now-block {
-      padding: 14px 14px; margin: 0 10px 12px; border-radius: var(--radius-md);
-      background: var(--surface); border: 1px solid var(--border);
-      box-shadow: 0 1px 0 rgba(0,0,0,0.2);
-      transition: box-shadow 0.35s ease, border-color 0.35s ease;
-    }
-    .now-block .now-label { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.15em; color: var(--accent); margin-bottom: 6px; }
-    .now-block .now-text { font-size: 12px; line-height: 1.5; color: var(--text); word-break: break-word; }
-    .now-block .now-reason { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 10px; line-height: 1.45; color: var(--text-dim); font-style: italic; }
+    .now-block .now-head { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.18em; color: var(--accent); margin: 0 0 8px; }
+    .now-block .now-text { font-size: 13px; line-height: 1.45; color: var(--text); word-break: break-word; margin: 0; min-height: 1.4em; }
+    .now-block .now-text.is-idle { color: var(--muted); font-style: italic; }
+    .now-block .now-reason { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--border); font-size: 11px; line-height: 1.45; color: var(--text-dim); font-style: italic; }
     .now-block .now-reason:empty { display: none; }
-    .now-block .now-tag { display: inline-block; margin-top: 8px; padding: 3px 10px; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em; background: var(--accent-glow); color: var(--accent); border-radius: 4px; }
-    .now-block.live { border-color: rgba(255,0,64,0.5); box-shadow: 0 0 24px var(--accent-glow); animation: liveBreath 4s ease-in-out infinite; }
+    .now-block .now-tag { display: inline-block; margin-top: 8px; padding: 4px 10px; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em; background: var(--accent-glow); color: var(--accent); border-radius: 4px; }
+    .now-block.live { border-color: rgba(255,0,64,0.5); box-shadow: 0 0 20px var(--accent-glow); animation: liveBreath 4s ease-in-out infinite; }
     @keyframes liveBreath { 0%, 100% { opacity: 1; } 50% { opacity: 0.94; } }
-    .tabs { display: flex; border-bottom: 1px solid var(--border); padding: 0 10px; gap: 2px; }
-    .tab { padding: 8px 10px; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em; color: var(--muted); background: transparent; border: none; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.2s; }
+    .tabs { display: flex; border-bottom: 1px solid var(--border); padding: 0 12px; gap: 0; }
+    .tab { padding: 10px 14px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; color: var(--muted); background: transparent; border: none; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.2s, border-color 0.2s; }
     .tab:hover { color: var(--text-dim); }
     .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-    .tab-content { display: none; flex: 1; overflow-y: auto; padding: 12px 14px; min-height: 120px; }
+    .tab-content { display: none; flex: 1; overflow-y: auto; padding: 10px 14px; min-height: 100px; }
     .tab-content.active { display: flex; flex-direction: column; }
-    .thought-item { padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; gap: 4px; transition: background 0.2s; }
-    .thought-item:hover { background: rgba(255,0,64,0.06); }
+    .thoughts-list { display: flex; flex-direction: column; gap: 0; }
+    .thought-item { padding: 10px 12px; border-radius: var(--radius-sm); margin-bottom: 4px; border-left: 3px solid transparent; display: flex; flex-direction: column; gap: 4px; transition: background 0.2s, border-color 0.2s; }
+    .thought-item:hover { background: rgba(255,0,64,0.05); border-left-color: var(--border); }
     .thought-item .thought-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .thought-item .thought-time { font-family: var(--font-mono); font-size: 9px; color: var(--muted); }
     .thought-item .thought-time[title] { cursor: help; }
     .thought-item .thought-action { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.06em; padding: 2px 6px; border-radius: 3px; background: rgba(255,0,64,0.2); color: var(--accent); }
     .thought-item .thought-text { font-size: 11px; line-height: 1.5; color: var(--text); word-break: break-word; }
-    .thought-item.item-new { animation: thoughtEnter 0.35s ease-out forwards; }
+    .thought-item.item-new { animation: thoughtEnter 0.35s ease-out forwards; border-left-color: var(--accent); }
     @keyframes thoughtEnter { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
     .log-item { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 11px; transition: background 0.2s; }
     .log-item:hover { background: rgba(255,0,64,0.04); }
@@ -195,13 +227,13 @@
     .inner-item .inner-time { font-family: var(--font-mono); font-size: 9px; color: var(--muted); margin-bottom: 4px; }
     .inner-item .inner-text { font-size: 11px; line-height: 1.5; color: var(--text); }
     .inner-item.inner-item-new { animation: thoughtEnter 0.3s ease-out forwards; }
-    .steps-list { max-height: 360px; overflow-y: auto; }
-    .step-item { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 11px; display: flex; flex-direction: column; gap: 4px; transition: background 0.2s; }
-    .step-item:hover { background: rgba(255,0,64,0.06); }
+    .steps-list { max-height: 360px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+    .step-item { padding: 10px 12px; border-radius: var(--radius-sm); border-left: 3px solid var(--border); font-size: 11px; display: flex; flex-direction: column; gap: 4px; transition: background 0.2s, border-color 0.2s; }
+    .step-item:hover { background: rgba(255,0,64,0.05); border-left-color: var(--accent); }
     .step-item .step-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .step-item .step-time { font-family: var(--font-mono); font-size: 9px; color: var(--muted); }
     .step-item .step-action { font-family: var(--font-mono); font-size: 8px; padding: 2px 6px; border-radius: 3px; background: rgba(255,0,64,0.2); color: var(--accent); }
-    .step-item .step-detail { color: var(--text-dim); word-break: break-all; }
+    .step-item .step-detail { color: var(--text-dim); word-break: break-all; font-size: 10px; }
     .step-item .step-thought { color: var(--text); line-height: 1.4; margin-top: 2px; }
     .terminal-log { max-height: 420px; overflow-y: auto; font-family: var(--font-mono); font-size: 11px; background: #0d1117; color: #c9d1d9; border-radius: var(--radius-sm); padding: 10px; border: 1px solid var(--border); }
     .terminal-log:empty { min-height: 80px; }
@@ -211,25 +243,22 @@
     .terminal-entry .term-cmd { color: #58a6ff; margin-bottom: 6px; word-break: break-all; }
     .terminal-entry .term-out { white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; color: #8b949e; font-size: 10px; }
     .terminal-entry .term-err { color: #f85149; white-space: pre-wrap; word-break: break-word; font-size: 10px; }
-    .empty-state { padding: 20px 14px; font-size: 11px; color: var(--muted); line-height: 1.5; text-align: center; }
-    .empty-state strong { display: block; margin-bottom: 6px; font-size: 10px; letter-spacing: 0.08em; color: var(--text-dim); }
-    .goals-block { padding: 12px 14px; border-bottom: 1px solid var(--border); }
-    .goals-block .goals-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-    .goals-block .goals-head .mind-section-title { margin-bottom: 0; }
+    .mind-empty { padding: 24px 14px; font-size: 11px; color: var(--muted); line-height: 1.5; text-align: center; }
+    .goals-block .goals-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .goals-block .goals-title { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.18em; color: var(--accent); margin: 0; }
     .goals-block .goals-count { font-family: var(--font-mono); font-size: 9px; color: var(--muted); }
-    .goal-item { padding: 8px 10px; margin-bottom: 6px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid transparent; display: flex; align-items: center; justify-content: space-between; gap: 8px; transition: border-color 0.2s; }
-    .goal-item:hover { border-color: var(--border); }
+    .goals-list { max-height: 160px; overflow-y: auto; margin-bottom: 10px; }
+    .goal-item { padding: 9px 12px; margin-bottom: 6px; border-radius: var(--radius-sm); background: var(--bg-panel); border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 8px; transition: border-color 0.2s, background 0.2s; }
+    .goal-item:hover { border-color: rgba(255,0,64,0.35); background: var(--surface); }
     .goal-item .goal-text { flex: 1; min-width: 0; font-size: 11px; color: var(--text); line-height: 1.4; }
     .goal-item.goal-done .goal-text { text-decoration: line-through; color: var(--muted); }
     .goal-item .goal-done { padding: 4px 10px; font-family: var(--font-mono); font-size: 9px; background: rgba(0,255,136,0.2); color: var(--success); border: 1px solid var(--success); border-radius: 4px; cursor: pointer; transition: opacity 0.2s; }
     .goal-item .goal-done:hover { opacity: 0.9; }
-    .goals-add { display: flex; gap: 8px; margin-top: 10px; }
-    .goals-add input { flex: 1; padding: 8px 12px; font-size: 11px; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); }
+    .goals-add { display: flex; gap: 8px; }
+    .goals-add input { flex: 1; padding: 8px 12px; font-size: 11px; background: var(--bg-panel); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); }
     .goals-add input:focus { outline: none; border-color: var(--accent); }
     .goals-add button { padding: 8px 14px; font-family: var(--font-mono); font-size: 10px; background: var(--accent); color: var(--bg); border: none; border-radius: var(--radius-sm); cursor: pointer; }
     .goals-add button:hover { filter: brightness(1.1); }
-    #goals-list { max-height: 160px; overflow-y: auto; margin-bottom: 0; }
-    .tab-self-header { font-size: 10px; color: var(--muted); margin-bottom: 10px; line-height: 1.45; }
 
     /* ─── Center: 3D + Neural ─── */
     .center-space { flex: 1; min-width: 0; position: relative; border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border); }
@@ -357,65 +386,76 @@
     </div>
     <div class="main" id="main-layout">
       <aside class="panel rail" id="rail">
-        <div class="panel-head"><span>Mind</span><button type="button" class="rail-toggle" id="rail-toggle" title="Collapse panel" aria-label="Collapse panel"><span class="icon">◀</span></button></div>
+        <div class="panel-head rail-head">
+          <div class="rail-main-tabs">
+            <button type="button" class="rail-main-tab active" data-rail="mind" aria-selected="true">Mind</button>
+            <button type="button" class="rail-main-tab" data-rail="terminal" aria-selected="false">Terminal</button>
+          </div>
+          <button type="button" class="rail-toggle" id="rail-toggle" title="Collapse panel" aria-label="Collapse panel"><span class="icon">◀</span></button>
+        </div>
         <div class="panel-body">
-          <div class="mind-section">
-            <div class="now-block" id="now-block">
-              <div class="now-label">Current thought</div>
-              <div class="now-text" id="current-thought">—</div>
-              <div class="now-reason" id="current-reason" aria-live="polite" title="Reasoning for this action"></div>
+          <div id="rail-mind" class="rail-pane active">
+            <section class="mind-card mind-core" aria-label="Core state">
+              <div class="mind-core-bars">
+                <div class="mind-core-bar-wrap">
+                  <label class="mind-core-bar-label">D</label>
+                  <div class="mind-core-bar"><div class="mind-core-fill mind-core-d" id="core-dopamine" style="width:50%"></div></div>
+                </div>
+                <div class="mind-core-bar-wrap">
+                  <label class="mind-core-bar-label">C</label>
+                  <div class="mind-core-bar"><div class="mind-core-fill mind-core-c" id="core-cortisol" style="width:20%"></div></div>
+                </div>
+                <div class="mind-core-bar-wrap">
+                  <label class="mind-core-bar-label">S</label>
+                  <div class="mind-core-bar"><div class="mind-core-fill mind-core-s" id="core-serotonin" style="width:50%"></div></div>
+                </div>
+              </div>
+              <div class="mind-core-stats"><span class="mind-stat" id="core-neurons">0</span><span class="mind-stat-sep">n</span><span class="mind-stat" id="core-synapses">0</span><span class="mind-stat-sep">syn</span><span class="mind-stat" id="core-thoughts">0</span><span class="mind-stat-sep">th</span></div>
+            </section>
+            <section class="mind-card now-block" id="now-block" aria-label="Current thought">
+              <h3 class="now-head">Now</h3>
+              <p class="now-text is-idle" id="current-thought" data-placeholder="Idle">Idle</p>
+              <p class="now-reason" id="current-reason" aria-live="polite"></p>
               <span class="now-tag" id="action-tag"></span>
+            </section>
+            <section class="mind-card goals-block" aria-label="Goals">
+              <div class="goals-head">
+                <h3 class="goals-title">Goals</h3>
+                <span class="goals-count" id="goals-count" aria-live="polite">0 active</span>
+              </div>
+              <div id="goals-list" class="goals-list"></div>
+              <div class="goals-add">
+                <input type="text" id="goal-input" placeholder="Add a goal…" maxlength="200" aria-label="New goal" />
+                <button type="button" id="goal-add-btn">Add</button>
+              </div>
+            </section>
+            <div class="tabs">
+              <button type="button" class="tab active" data-tab="thoughts">Thoughts</button>
+              <button type="button" class="tab" data-tab="steps">Steps</button>
+            </div>
+            <div id="tab-thoughts" class="tab-content active">
+              <div id="thoughts-list" class="thoughts-list"></div>
+              <div id="thoughts-empty" class="mind-empty" style="display:none;">No thoughts yet</div>
+            </div>
+            <div id="tab-steps" class="tab-content">
+              <div id="steps-list" class="steps-list" aria-live="polite"></div>
+              <div id="steps-empty" class="mind-empty" style="display:none;">No steps yet</div>
             </div>
           </div>
-          <div class="goals-block mind-section">
-            <div class="goals-head">
-              <span class="mind-section-title">Goals</span>
-              <span class="goals-count" id="goals-count" aria-live="polite">0 active</span>
-            </div>
-            <div id="goals-list"></div>
-            <div class="goals-add">
-              <input type="text" id="goal-input" placeholder="Add a goal…" maxlength="200" />
-              <button type="button" id="goal-add-btn">Add</button>
-            </div>
-          </div>
-          <div class="tabs">
-            <button type="button" class="tab active" data-tab="thoughts">Thoughts</button>
-            <button type="button" class="tab" data-tab="steps">Steps</button>
-            <button type="button" class="tab" data-tab="self-talk">Self</button>
-            <button type="button" class="tab" data-tab="inner">Inner</button>
-            <button type="button" class="tab" data-tab="activity">Activity</button>
-            <button type="button" class="tab" data-tab="terminal">Terminal</button>
-          </div>
-          <div id="tab-thoughts" class="tab-content active">
-            <div class="mind-section-title">Recent thoughts (action + reasoning)</div>
-            <div id="thoughts-list"></div>
-            <div id="thoughts-empty" class="empty-state" style="display:none;"><strong>No thoughts yet</strong>Thoughts appear here as Laura thinks. Each shows time, action type, and the thought.</div>
-          </div>
-          <div id="tab-steps" class="tab-content">
-            <div class="mind-section-title">Live steps (every action in order)</div>
-            <div id="steps-list" class="steps-list" aria-live="polite"></div>
-            <div id="steps-empty" class="empty-state" style="display:none;"><strong>No steps yet</strong>Each decide → execute → reflect appears here so you can see if she’s looping.</div>
-          </div>
-          <div id="tab-self-talk" class="tab-content">
-            <p class="tab-self-header">Laura talks to herself, then acts on the conclusion. Transcript and outcome below.</p>
-            <div id="self-conversation-conclusion" class="self-conclusion" aria-live="polite"></div>
-            <div id="self-conversation-list"></div>
-            <div id="self-talk-empty" class="empty-state" style="display:none;"><strong>No self-talk yet</strong>When she has a full dialogue with herself, the conclusion and messages appear here.</div>
-          </div>
-          <div id="tab-inner" class="tab-content">
-            <div class="mind-section-title">Inner voice (reasoning stream)</div>
-            <div id="inner-thoughts-list"></div>
-            <div id="inner-empty" class="empty-state" style="display:none;"><strong>No inner thoughts yet</strong>Her raw reasoning stream appears here.</div>
-          </div>
-          <div id="tab-activity" class="tab-content">
-            <div class="mind-section-title">Activity log (actions &amp; I/O)</div>
-            <div id="logs-list"></div>
-            <div id="logs-empty" class="empty-state" style="display:none;"><strong>No activity yet</strong>File reads, URLs, commands show here with type and target.</div>
-          </div>
-          <div id="tab-terminal" class="tab-content">
+          <div id="rail-terminal" class="rail-pane">
+            <div class="terminal-panel">
+              <div class="terminal-tab-bar">
+                <div class="terminal-tabs" id="terminal-tabs"></div>
+                <button type="button" class="terminal-tab-add" id="terminal-tab-add" title="New terminal">+</button>
+              </div>
+              <div class="terminal-content" id="terminal-content">
+                <div class="terminal-tab-pane active" data-terminal-id="laura">
             <div class="mind-section-title">Laura’s terminal (live)</div>
-            <div id="terminal-log" class="terminal-log" aria-live="polite"></div>
-            <div id="terminal-empty" class="empty-state" style="display:none;"><strong>No terminal output yet</strong>Commands she runs and their stdout/stderr appear here.</div>
+                  <div id="terminal-log" class="terminal-log" aria-live="polite"></div>
+                  <div id="terminal-empty" class="empty-state" style="display:none;"><strong>No output yet</strong> Laura's commands appear here.</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </aside>

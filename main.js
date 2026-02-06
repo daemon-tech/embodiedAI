@@ -377,11 +377,14 @@ ipcMain.handle('get-memory-stats', async () => memory.getStats());
 ipcMain.handle('get-metrics', () => (metrics ? metrics.getMetrics() : null));
 ipcMain.handle('get-current-activity', () => (metrics ? metrics.getCurrentActivity() : null));
 ipcMain.handle('get-living-state', async () => {
+  const state = memory.getState();
   const stats = memory.getStats();
   const loop = mindLoop
     ? { running: true, paused: mindLoop.paused, nextIntervalMs: mindLoop.intervalMs, lastTickTime: mindLoop._lastTickTime || 0 }
     : { running: false, paused: true, nextIntervalMs: 0, lastTickTime: 0 };
   return {
+    hormones: state.hormones || { dopamine: 0.5, cortisol: 0.2, serotonin: 0.5 },
+    emotions: state.emotions || { joy: 0.3, frustration: 0.1, interest: 0.5, confusion: 0.2 },
     stats: { neurons: stats.neurons, synapses: stats.synapses, thoughts: stats.thoughts, episodes: stats.episodes, goals: stats.goals },
     living: { lastTickTime: loop.lastTickTime, nextIntervalMs: loop.nextIntervalMs },
     loopStatus: { running: loop.running, paused: loop.paused },
@@ -399,6 +402,7 @@ ipcMain.handle('get-debug-info', async () => {
       lastError: (state && state.lastError) || (working && working.lastError) || null,
       activity: metrics ? metrics.getCurrentActivity() : null,
       living: mindLoop ? { paused: mindLoop.paused, nextIntervalMs: mindLoop.intervalMs } : null,
+      actionTrace: memory.getActionTrace ? memory.getActionTrace(150) : [],
     };
   } catch (e) {
     return { error: e.message || 'Failed to get debug info' };
