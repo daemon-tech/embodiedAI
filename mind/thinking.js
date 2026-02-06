@@ -27,6 +27,25 @@ const CORE_CHAT = `You are the coding agent for this workspace (like Cursor's ag
 const ACTION_SCHEMA = `Valid action types: read_file (needs "path"), list_dir (needs "path"), write_file (needs "path", "content"), delete_file (needs "path"), fetch_url (needs "url"), browse (needs "url"), write_journal, rest, think, self_dialogue (conversation with yourself—then act on conclusion), read_self (needs "target": "memory_summary"|"config"|"code"|"all"), edit_code (needs "path"—any file in allowed dirs or mind/agent_extensions.js, "oldText", "newText"—exact replace), run_terminal (needs "command"), read_clipboard, write_clipboard (needs "text"). Include "nextIntervalMs" (3000-30000) and "reason" (one short sentence—user sees it live, like Cursor). Only paths in allowed dirs and allowed hosts.`;
 
 const OLLAMA_ERROR_THROTTLE_MS = 60000;
+const STREAM_SEND_INTERVAL_MS = 80;
+const STREAM_FALLBACK_ON_ERROR = true;
+
+/** Throttle: call fn at most every intervalMs; returns a function that schedules fn with latest args. */
+function throttle(fn, intervalMs) {
+  let last = 0;
+  let timer = null;
+  let lastArgs = null;
+  return function (...args) {
+    lastArgs = args;
+    const run = () => {
+      last = Date.now();
+      timer = null;
+      if (lastArgs) fn(...lastArgs);
+    };
+    if (Date.now() - last >= intervalMs) run();
+    else if (!timer) timer = setTimeout(run, intervalMs - (Date.now() - last));
+  };
+}
 
 const VALID_ACTION_TYPES = new Set(['read_file', 'list_dir', 'write_file', 'delete_file', 'fetch_url', 'browse', 'write_journal', 'rest', 'think', 'self_dialogue', 'read_self', 'edit_code', 'run_terminal', 'read_clipboard', 'write_clipboard']);
 
@@ -239,6 +258,176 @@ class Thinking {
       }
       return null;
     }
+  }
+
+  /**
+   * Stream Ollama /api/generate. Calls onStream(textSoFar, done) periodically. Returns full text or null on failure.
+   */
+  async callOllamaStream(prompt, systemPrompt, options, onStream) {
+    const prompts = this.getPrompts();
+    const base = systemPrompt || prompts.systemPrompt;
+    const sys = base + '\n\n' + prompts.identity;
+    const body = {
+      model: this.model,
+      prompt,
+      system: sys,
+      stream: true,
+      options: { temperature: options.temperature ?? 0.7, num_predict: options.num_predict ?? 500 },
+    };
+    const url = `${this.ollamaUrl}/api/generate`;
+    if (!nodeHttp || !nodeHttps) return null;
+    try {
+      const u = new URL(url);
+      const isHttps = u.protocol === 'https:';
+      const lib = isHttps ? nodeHttps : nodeHttp;
+      let buffer = '';
+      let full = '';
+      const throttledSend = throttle((text, done) => {
+        if (onStream) onStream(text, done);
+      }, STREAM_SEND_INTERVAL_MS);
+      const send = (text, done) => {
+        if (done) {
+          if (onStream) onStream(text, true);
+          return;
+        }
+        throttledSend(text, false);
+      };
+      await new Promise((resolve, reject) => {
+        const req = lib.request({
+          hostname: u.hostname,
+          port: u.port || (isHttps ? 443 : 80),
+          path: u.pathname + u.search,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        }, (res) => {
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            res.resume();
+            return resolve(null);
+          }
+          res.on('data', (chunk) => {
+            buffer += chunk.toString('utf8');
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              try {
+                const obj = JSON.parse(line);
+                if (obj.response) full += obj.response;
+                if (obj.done) {
+                  send(full, true);
+                  return resolve(full);
+                }
+                send(full, false);
+              } catch (_) {}
+            }
+          });
+          res.on('end', () => {
+            if (buffer.trim()) {
+              try {
+                const obj = JSON.parse(buffer);
+                if (obj.response) full += obj.response;
+              } catch (_) {}
+            }
+            send(full, true);
+            resolve(full);
+          });
+          res.on('error', reject);
+        });
+        req.on('error', reject);
+        req.setTimeout(120000, () => { req.destroy(); reject(new Error('Timeout')); });
+        req.write(JSON.stringify(body));
+        req.end();
+      });
+      return full.trim() || null;
+    } catch (err) {
+      if (Date.now() - this._lastOllamaErrorLog > OLLAMA_ERROR_THROTTLE_MS) {
+        this._lastOllamaErrorLog = Date.now();
+        console.error('Ollama stream error:', err.message);
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Stream OpenAI chat completions. Calls onStream(textSoFar, done). Returns full content or null.
+   */
+  async callOpenAIStream(prompt, systemPrompt, options, onStream) {
+    if (!fetchImpl || !this.useOpenAI) return null;
+    const prompts = this.getPrompts();
+    const base = systemPrompt || prompts.systemPrompt;
+    const sys = base + '\n\n' + prompts.identity;
+    const url = `${this.openaiBaseUrl}/v1/chat/completions`;
+    const body = {
+      model: this.model,
+      messages: [
+        { role: 'system', content: sys },
+        { role: 'user', content: prompt },
+      ],
+      temperature: options.temperature ?? 0.7,
+      max_tokens: options.num_predict ?? 500,
+      stream: true,
+    };
+    try {
+      const res = await fetchImpl(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + this.openaiApiKey },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) return null;
+      const reader = res.body && res.body.getReader;
+      if (!reader) return null;
+      const dec = new (typeof TextDecoder !== 'undefined' ? TextDecoder : require('util').TextDecoder)('utf8');
+      let full = '';
+      let buffer = '';
+      const throttledSend = throttle((text, done) => { if (onStream) onStream(text, done); }, STREAM_SEND_INTERVAL_MS);
+      const send = (text, done) => {
+        if (done) { if (onStream) onStream(text, true); return; }
+        throttledSend(text, false);
+      };
+      const r = res.body.getReader();
+      while (true) {
+        const { value, done: streamDone } = await r.read();
+        if (streamDone) break;
+        buffer += dec.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6).trim();
+            if (data === '[DONE]') { send(full, true); return full; }
+            try {
+              const obj = JSON.parse(data);
+              const delta = obj.choices && obj.choices[0] && obj.choices[0].delta && obj.choices[0].delta.content;
+              if (delta) full += delta;
+              send(full, false);
+            } catch (_) {}
+          }
+        }
+      }
+      send(full, true);
+      return full.trim() || null;
+    } catch (err) {
+      console.error('OpenAI stream error:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Call LLM with streaming. Calls onStream(textSoFar, done). On stream failure falls back to non-streaming if STREAM_FALLBACK_ON_ERROR.
+   */
+  async callLLMStream(prompt, systemPrompt, options, onStream) {
+    const doStream = (useOpenAI) => {
+      if (useOpenAI) return this.callOpenAIStream(prompt, systemPrompt, options, onStream);
+      return this.callOllamaStream(prompt, systemPrompt, options, onStream);
+    };
+    let out = null;
+    if (this.useOpenAI) out = await doStream(true);
+    if (out === null) out = await doStream(false);
+    if (out === null && STREAM_FALLBACK_ON_ERROR) {
+      out = await this.callLLM(prompt, systemPrompt, options);
+      if (out && onStream) onStream(out, true);
+    }
+    return out;
   }
 
   /**
