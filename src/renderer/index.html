@@ -66,6 +66,7 @@
     .hud-status .pulse.run { background: var(--success); box-shadow: 0 0 10px var(--success); animation: pulse 1.5s ease-in-out infinite; }
     .hud-status .pulse.pause { background: var(--warn); }
     .hud-status .pulse.stop { background: var(--danger); }
+    .simulation-badge { display: none; margin-left: 8px; padding: 2px 8px; font-size: 9px; background: var(--warn); color: var(--bg); border-radius: 2px; letter-spacing: 0.05em; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
     .hud-stats { font-family: var(--font-mono); font-size: 9px; color: var(--muted); letter-spacing: 0.03em; white-space: nowrap; }
     .hud-stats .hi { color: var(--accent); }
@@ -282,6 +283,7 @@
       <div class="hud-status">
         <span class="pulse stop" id="status-dot"></span>
         <span id="status-text">—</span>
+        <span class="simulation-badge" id="simulation-badge" title="Dry run: no real I/O or LLM">SIMULATION</span>
       </div>
       <div class="hud-stats-wrap" title="Paths · thoughts · neurons · synapses. Open Vitals for speed, memory, doing.">
         <div id="stat-line" class="hud-stats">0 paths · 0 th · 0 n</div>

@@ -52,6 +52,9 @@ class Perception {
         path: path.join(resolved, e.name),
       }));
       this.memory.markExploredPath(resolved, `dir:${items.length} items`);
+      for (const item of items) {
+        this.memory.markExploredPath(item.path, item.isDir ? 'dir' : 'file');
+      }
       this.memory.setState({ lastDir: resolved });
       return { ok: true, path: resolved, items };
     } catch (err) {

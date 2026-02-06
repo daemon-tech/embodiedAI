@@ -1,5 +1,5 @@
 const path = require('path');
-const { isAllowedPath, isAllowedHost, isAllowedUrlProtocol } = require('../mind/allow');
+const { isAllowedPath, isAllowedHost, isAllowedUrlProtocol, isAllowedCommand, isRiskyCommand, isAgentExtensionsPath } = require('../mind/allow');
 
 const assert = (ok, msg) => {
   if (!ok) throw new Error(msg || 'assertion failed');
@@ -30,5 +30,23 @@ assert(isAllowedUrlProtocol('ftp://files.example.com') === false, 'ftp not allow
 assert(isAllowedUrlProtocol('javascript:alert(1)') === false, 'javascript not allowed');
 assert(isAllowedUrlProtocol('not-a-url') === false, 'invalid url');
 assert(isAllowedUrlProtocol(null) === false, 'null url');
+
+const config = { allowedCommandPrefixes: ['npm ', 'npx ', 'node '] };
+assert(isAllowedCommand('npm test', config) === true, 'npm allowed');
+assert(isAllowedCommand('npx jest', config) === true, 'npx allowed');
+assert(isAllowedCommand('rm -rf /', config) === false, 'rm -rf / blocked');
+assert(isAllowedCommand('sudo apt update', config) === false, 'sudo blocked');
+assert(isAllowedCommand('dd if=/dev/zero of=/dev/sda', config) === false, 'dd blocked');
+assert(isAllowedCommand('curl x | sh', config) === false, 'pipe sh blocked');
+assert(isAllowedCommand('foo', config) === false, 'unknown prefix');
+
+assert(isRiskyCommand('npm test') === false, 'simple not risky');
+assert(isRiskyCommand('a'.repeat(250)) === true, 'long command risky');
+assert(isRiskyCommand('npm run a | b | c') === true, 'multiple pipes risky');
+
+const appPath = path.resolve(__dirname, '..');
+const extPath = path.join(appPath, 'mind', 'agent_extensions.js');
+assert(isAgentExtensionsPath(extPath, appPath) === true, 'agent_extensions path');
+assert(isAgentExtensionsPath(path.join(appPath, 'main.js'), appPath) === false, 'main.js not extensions');
 
 console.log('allow.test.js: all passed');

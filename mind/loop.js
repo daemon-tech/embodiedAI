@@ -2,7 +2,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const { execSync, exec } = require('child_process');
 const { app, clipboard } = require('electron');
-const { isAllowedPath, isAllowedHost, isAllowedCommand } = require('./allow');
+const { isAllowedPath, isAllowedHost, isAllowedCommand, isRiskyCommand, isAgentExtensionsPath } = require('./allow');
 
 /** Core files are read-only (like Cursor protecting its own engine). Agent can edit anything else in allowed dirs. */
 const CORE_FILES = ['mind/loop.js', 'mind/memory.js', 'mind/thinking.js', 'mind/action.js', 'mind/perception.js', 'mind/curiosity.js', 'mind/embedding.js', 'mind/allow.js', 'mind/safety_principles.js', 'main.js'];
@@ -53,6 +53,7 @@ class MindLoop {
     this._lastConceptIds = [];
     this._lastActionTypes = [];
     this._consecutiveErrors = 0;
+    this._consecutiveLLMErrors = 0;
     this._scheduleNext = this._scheduleNext.bind(this);
   }
 
@@ -65,7 +66,13 @@ class MindLoop {
   }
 
   _scheduleNext() {
-    const ms = this.intervalMs;
+    let ms = this.intervalMs;
+    if (this.metrics && this.config.highLoadMemoryMB) {
+      const usage = this.metrics.getResourceUsage();
+      if (usage.rssMB >= this.config.highLoadMemoryMB) {
+        ms = Math.min(60000, ms * 2);
+      }
+    }
     this.timer = setTimeout(() => this.tick(), Math.max(0, ms));
   }
 
@@ -99,6 +106,9 @@ class MindLoop {
     };
     this.memory.setState({ hormones: state.hormones });
     this.sendToRenderer('hormones', state.hormones);
+    const threshold = this.config.hormoneResetCortisolThreshold ?? 0.9;
+    const ticks = this.config.hormoneResetTicks ?? 10;
+    this.memory.checkHormoneReset(threshold, ticks);
   }
 
   async tick() {
@@ -134,8 +144,12 @@ class MindLoop {
       ]);
     } catch (e) {
       console.error('Thinking.decideAction error:', e.message);
+      this._consecutiveLLMErrors = (this._consecutiveLLMErrors || 0) + 1;
       this.memory.setLastError('Decide action failed: ' + (e.message || 'unknown'));
       this.sendToRenderer('error', 'Decide action failed: ' + (e.message || 'unknown'));
+      if (this._consecutiveLLMErrors >= 2 && this.sendToRenderer) {
+        this.sendToRenderer('toast', { message: 'Multiple LLM errors — consider pausing or checking Ollama.', type: 'warn' });
+      }
       action = this.thinking.fallbackAction(this.memory.getState().hormones || {});
       try { await this.thinking.replan('decideAction failed'); } catch (_) {}
     }
@@ -143,6 +157,7 @@ class MindLoop {
       this.metrics.recordTiming('decide_ms', Date.now() - decideStart);
       this.metrics.setActivity('execute', action && action.type ? action.type : 'think');
     }
+    if (action && action.type && !this.memory.getState().lastError) this._consecutiveLLMErrors = 0;
     if (!action || !action.type) {
       action = this.thinking.fallbackAction(this.memory.getState().hormones || {});
     }
@@ -251,6 +266,11 @@ class MindLoop {
         }
         this.memory.advancePlan();
       } else if (action.type === 'read_file' && action.path) {
+        if (this.config.dryRun) {
+          thought = `[Dry run] Would read_file: ${action.path}`;
+          logPayload.path = action.path;
+          logPayload.ok = true;
+        } else {
         const result = await this.perception.readFile(action.path);
         logPayload.path = action.path;
         logPayload.ok = result.ok;
@@ -266,7 +286,13 @@ class MindLoop {
           this.updateHormones({ cortisol: 0.1 });
           thought = await this.thinking.reflect(action, result, result.error) || `I couldn't read ${action.path}.`;
         }
+        }
       } else if (action.type === 'list_dir' && action.path) {
+        if (this.config.dryRun) {
+          thought = `[Dry run] Would list_dir: ${action.path}`;
+          logPayload.path = action.path;
+          logPayload.ok = true;
+        } else {
         const result = await this.perception.listDir(action.path);
         logPayload.path = action.path;
         logPayload.ok = result.ok;
@@ -280,6 +306,7 @@ class MindLoop {
           this.memory.setLastError(result.error);
           this.updateHormones({ cortisol: 0.05 });
           thought = await this.thinking.reflect(action, result, result.error) || `List failed: ${action.path}.`;
+        }
         }
       } else if (action.type === 'fetch_url' && action.url) {
         const result = await this.perception.fetchUrl(action.url);
@@ -378,10 +405,14 @@ class MindLoop {
         logPayload.selfConversation = transcript;
         this.sendToRenderer('self-conversation', { transcript, conclusion });
       } else if (action.type === 'run_terminal' && action.command) {
-        if (!isAllowedCommand(action.command)) {
+        if (!isAllowedCommand(action.command, this.config)) {
           this.memory.setLastError('run_terminal: command not allowed');
           thought = await this.thinking.reflect(action, { ok: false, error: 'Command not allowed' }, 'Command not allowed') || `That command isn't allowed.`;
           logPayload.ok = false;
+        } else if (this.config.dryRun) {
+          thought = `[Dry run] Would run: ${action.command.slice(0, 80)}...`;
+          logPayload.command = action.command;
+          logPayload.ok = true;
         } else {
           const cwd = (this.config.allowedDirs && this.config.allowedDirs[0]) ? path.resolve(this.config.allowedDirs[0]) : (this.config.appPath || path.join(__dirname, '..'));
           const RUN_TIMEOUT_MS = 30000;
@@ -403,10 +434,20 @@ class MindLoop {
             logPayload.command = action.command;
             logPayload.ok = false;
           }
+          this.memory.addAuditLog({ type: 'run_terminal', args: { command: String(action.command).slice(0, 200) }, outcome: logPayload.ok ? 'ok' : 'error' }).catch(() => {});
+          if (isRiskyCommand(action.command)) {
+            this.thinking.metaReview().catch(() => {});
+          }
         }
       } else if (action.type === 'edit_code' && action.path && action.oldText != null && action.newText != null) {
+        const appPath = this.config.appPath || path.join(__dirname, '..');
         const backupDir = path.join(app.getPath('userData'), 'backups');
         const targetPath = action.path;
+        if (this.config.dryRun) {
+          thought = `[Dry run] Would edit_code ${targetPath} (${(action.oldText || '').length} → ${(action.newText || '').length} chars).`;
+          logPayload.path = targetPath;
+          logPayload.ok = true;
+        } else {
         let content = '';
         try {
           content = await fs.readFile(targetPath, 'utf8');
@@ -445,6 +486,11 @@ class MindLoop {
               }
             }
           }
+        }
+        this.memory.addAuditLog({ type: 'edit_code', args: { path: targetPath }, outcome: logPayload.ok ? 'ok' : 'error' }).catch(() => {});
+        if (isAgentExtensionsPath(targetPath, appPath)) {
+          this.thinking.metaReview().catch(() => {});
+        }
         }
       } else {
         const state = this.memory.getState();
@@ -526,6 +572,11 @@ class MindLoop {
         }
       }
       this._debouncedSave();
+
+      const archiveEvery = Math.max(50, this.config.archiveEveryTicks || 100);
+      if (this._tickCount > 0 && this._tickCount % archiveEvery === 0) {
+        this.memory.archive().catch(() => {});
+      }
 
       if (this._tickCount % DEEP_REFLECT_EVERY_TICKS === 0) {
         if (this.config.continuousMode) {

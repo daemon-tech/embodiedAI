@@ -30,6 +30,20 @@ async function run() {
   const parsed = JSON.parse(raw);
   if (!parsed.thoughts || parsed.thoughts.length < 1) throw new Error('persisted thoughts');
 
+  memory.data.state.hormones.cortisol = 0.95;
+  memory._cortisolHighTicks = 9;
+  memory.checkHormoneReset(0.9, 10);
+  if (memory._cortisolHighTicks !== 0) throw new Error('hormone reset should zero ticks after 10');
+  const h = memory.getState().hormones;
+  if (h.cortisol >= 0.5) throw new Error('cortisol should be halved');
+
+  const auditPath = path.join(tmpDir, 'audit_log.json');
+  const memWithAudit = new Memory(filePath, null, null, auditPath);
+  await memWithAudit.addAuditLog({ type: 'test', args: {}, outcome: 'ok' });
+  const auditRaw = await fs.readFile(auditPath, 'utf8');
+  const auditList = JSON.parse(auditRaw);
+  if (auditList.length !== 1 || auditList[0].type !== 'test') throw new Error('audit log');
+
   await fs.rm(tmpDir, { recursive: true, force: true });
   console.log('memory.test.js: all passed');
 }

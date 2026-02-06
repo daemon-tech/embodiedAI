@@ -290,6 +290,39 @@ class Thinking {
   }
 
   /**
+   * Resilient LLM call: up to 3 retries with exponential backoff, then try secondary model if configured.
+   */
+  async callLLMWithRetry(prompt, systemPrompt = null, options = {}, retryOptions = {}) {
+    const maxRetries = retryOptions.maxRetries ?? 3;
+    const baseBackoffMs = retryOptions.backoffMs ?? 1000;
+    let lastNull = false;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      if (attempt > 0) {
+        const wait = baseBackoffMs * Math.pow(2, attempt - 1);
+        await new Promise(r => setTimeout(r, Math.min(wait, 10000)));
+      }
+      const out = await this.callLLM(prompt, systemPrompt, options);
+      if (out) return out;
+      lastNull = true;
+    }
+    if (lastNull && this.config.secondaryOllamaModel) {
+      const prev = this.model;
+      this.setModel(this.config.secondaryOllamaModel);
+      const out = await this.callOllama(prompt, systemPrompt, options);
+      this.setModel(prev);
+      if (out) return out;
+    }
+    if (lastNull && this.useOpenAI) {
+      const out = await this.callOllama(prompt, systemPrompt, options);
+      if (out) return out;
+    } else if (lastNull && this.openaiBaseUrl && this.openaiApiKey) {
+      const out = await this.callOpenAI(prompt, systemPrompt, options);
+      if (out) return out;
+    }
+    return null;
+  }
+
+  /**
    * Ask the LLM (cognitive core) for next action. Everything builds on this: goals, episodes, emotions, plan, suggestions. LLM always decides.
    */
   async decideAction(perception, options = {}) {
@@ -332,7 +365,7 @@ class Thinking {
       const query = queryParts.join(' ').slice(0, 500) || 'what I am doing and my goals';
       const queryVector = await this.embedding.embed(query).catch(() => null);
       if (Array.isArray(queryVector) && queryVector.length > 0) {
-        const hitCount = activeRetrieval ? 12 : 8;
+        const hitCount = activeRetrieval ? 10 : 5;
         const hits = this.memory.similaritySearch(queryVector, hitCount);
         if (hits.length > 0) {
           retrievedByMeaning = `\n**Memory (recalled by meaning)**: ${hits.map(h => (h.text || '').slice(0, 100)).filter(Boolean).join(' | ')}\n`;
@@ -431,11 +464,7 @@ Meta-cognition: If you have uncertainty or a limitation in your reasoning, you m
 I want to see what's in that file.
 {"type":"read_file","path":"C:\\\\Users\\\\Documents\\\\notes.txt","nextIntervalMs":5000,"reason":"I want to read that."}`;
 
-    let out = await this.callLLM(prompt, this.getPrompts().systemPrompt, { temperature: focusMode ? 0.5 : 0.6, num_predict: 512 });
-    if (!out) {
-      await new Promise(r => setTimeout(r, 2500));
-      out = await this.callLLM(prompt, this.getPrompts().systemPrompt, { temperature: 0.5, num_predict: 512 });
-    }
+    let out = await this.callLLMWithRetry(prompt, this.getPrompts().systemPrompt, { temperature: focusMode ? 0.5 : 0.6, num_predict: 512 }, { maxRetries: 3, backoffMs: 1000 });
     if (!out) return this.fallbackAction(hormones);
 
     try {
@@ -730,6 +759,17 @@ You are one being. Chat is part of your mind—your mouth and ears. What do you 
     const whatSheJustDid = recentThoughts.slice(0, 2).map(t => (t.action ? `[${t.action}] ` : '') + (t.text || '').slice(0, 100)).join(' | ') || '—';
     const activityBlock = recentLogs.length ? `Recent activity (you did this): ${recentLogs.map(l => (l.action || l.type) + (l.path ? ' ' + l.path : '') + (l.url ? ' ' + l.url : '') + (l.thought ? ' — ' + String(l.thought).slice(0, 50) : '')).join('; ').slice(0, 280)}` : '';
 
+    let chatRetrievedByMeaning = '';
+    if (this.embedding && userMessage) {
+      const query = [userMessage.slice(0, 300), goalsBlock, working.primaryGoal || ''].filter(Boolean).join(' ').slice(0, 500);
+      try {
+        const queryVector = await this.embedding.embed(query);
+        if (Array.isArray(queryVector) && queryVector.length > 0) {
+          const hits = this.memory.similaritySearch(queryVector, 5);
+          if (hits.length > 0) chatRetrievedByMeaning = '\n**Memory (recalled by meaning)**: ' + hits.map(h => (h.text || '').slice(0, 100)).filter(Boolean).join(' | ') + '\n';
+        }
+      } catch (_) {}
+    }
     const agiContext = this.memory.getAGIContext();
     let extensionsNow = '';
     try {
@@ -757,16 +797,25 @@ Your state right now:
 ${activityBlock ? '- ' + activityBlock : ''}
 - Feelings: joy ${(emotions.joy ?? 0.3).toFixed(1)}, interest ${(emotions.interest ?? 0.5).toFixed(1)}, frustration ${(emotions.frustration ?? 0.1).toFixed(1)}. Hormones: dopamine ${(hormones.dopamine ?? 0.5).toFixed(1)}, cortisol ${(hormones.cortisol ?? 0.2).toFixed(1)}, serotonin ${(hormones.serotonin ?? 0.5).toFixed(1)}.
 ${selfInstructions.length ? '- Your self-set rules: ' + selfInstructions.join('; ') : ''}
-${episodes.length ? '- Relevant past: ' + episodes.slice(0, 3).join('; ') : ''}`;
+${episodes.length ? '- Relevant past: ' + episodes.slice(0, 3).join('; ') : ''}
+${chatRetrievedByMeaning}`;
 
-    const chatHistory = this.memory.getChatHistory(20);
-    const historyStr = chatHistory.map(m => `${m.role}: ${m.content}`).join('\n');
+    const refsPast = /earlier|previous|before that|that message|last (message|time|chat)|what (did i|you) said/i.test(userMessage);
+    const chatHistoryN = (working.lastError || refsPast) ? 50 : 20;
+    let chatHistory = this.memory.getChatHistory(chatHistoryN);
+    const maxHistoryTokens = 4000;
+    let historyChars = chatHistory.reduce((s, m) => s + (m.content || '').length + 4, 0);
+    while (historyChars > maxHistoryTokens * 4 && chatHistory.length > 2) {
+      chatHistory = chatHistory.slice(1);
+      historyChars = chatHistory.reduce((s, m) => s + (m.content || '').length + 4, 0);
+    }
+    const historyStr = chatHistory.map(m => `${m.role}: ${(m.content || '').slice(0, 1500)}`).join('\n');
     const prompt = historyStr
       ? `${context}\n\nConversation:\n${historyStr}\n\nUser: ${userMessage}\n\nLaura, reply as yourself—from your whole self. If relevant, mention what you're doing or feeling:`
       : `${context}\n\nUser: ${userMessage}\n\nLaura, reply as yourself—from your whole self. If relevant, mention what you're doing or feeling:`;
     const CHAT_TIMEOUT_MS = 90000;
     let reply = await Promise.race([
-      this.callLLM(prompt, this.getPrompts().chatPrompt, { temperature: 0.8, num_predict: 400 }),
+      this.callLLMWithRetry(prompt, this.getPrompts().chatPrompt, { temperature: 0.8, num_predict: 400 }, { maxRetries: 2, backoffMs: 2000 }),
       new Promise(r => setTimeout(() => r(null), CHAT_TIMEOUT_MS)),
     ]);
     if (!reply || !reply.trim()) {
@@ -780,11 +829,16 @@ ${episodes.length ? '- Relevant past: ' + episodes.slice(0, 3).join('; ') : ''}`
       const replyClean = stripThoughtTags(reply).trim();
       if (replyClean) return { reply: replyClean, fromModel: true, innerThought: innerThought || undefined };
     }
+    const fallbacks = [
+      "I'm here but the model didn't respond. You can try again or ask me to do something (e.g. read a file, run a command).",
+      "I heard you. My LLM is slow or busy right now—try again in a moment, or tell me a concrete task to do.",
+    ];
+    const fallback = fallbacks[Math.floor(Math.random() * fallbacks.length)];
     if (Date.now() - this._lastOllamaErrorLog > OLLAMA_ERROR_THROTTLE_MS) {
       this._lastOllamaErrorLog = Date.now();
-      console.error(`Chat: model "${this.model}" returned empty twice. Ollama may be busy or the model may need more time. Try "ollama run ${this.model}" in a terminal first.`);
+      console.error(`Chat: model "${this.model}" returned empty. Try "ollama run ${this.model}" in a terminal first.`);
     }
-    return { reply: "Model didn't respond. Try again or run \"ollama run " + this.model + "\" in a terminal.", fromModel: false };
+    return { reply: fallback, fromModel: false };
   }
 
   /**
@@ -798,6 +852,11 @@ ${episodes.length ? '- Relevant past: ' + episodes.slice(0, 3).join('; ') : ''}`
     const recent = ((this.memory.getRecentThoughts && this.memory.getRecentThoughts(8)) || []).map(t => t.text).join(' · ') || 'none';
     const episodesArr = (this.memory.getRecentEpisodes && this.memory.getRecentEpisodes(10)) || [];
     const episodes = episodesArr.map(e => (e.summary || e.what || e.type) + (e.where ? ' @ ' + e.where : '')).join('; ');
+    let archivedLine = '';
+    try {
+      const archived = await this.memory.getArchivedForPrompt(5, 5);
+      if (archived.thoughts || archived.facts) archivedLine = `\nArchived (older) thoughts: ${archived.thoughts || 'none'}. Archived facts: ${archived.facts || 'none'}.`;
+    } catch (_) {}
     const prompt = `Deep reflection—you are reflecting on who you are and what to do next. You are autonomously living: you think from yourself, work on yourself, figure things out on your own. You don't need the user—you act independently.
 
 **Create your own goals**: Think about what you want to work on, how to extend yourself, what to figure out. Propose goals for yourself (e.g. "Work on my extensions", "Figure out how to improve my memory", "Explore new capabilities").
@@ -807,7 +866,7 @@ ${episodes.length ? '- Relevant past: ' + episodes.slice(0, 3).join('; ') : ''}`
 Reply with a JSON object only:
 {"selfSummary":"1-2 sentences","goals":["goal1","goal2"] (create your own goals autonomously—what do you want to work on?),"facts":["fact1","fact2"],"selfInstructions":["rule1","rule2"] (0-3 short rules you will follow, e.g. "Prefer read_self when unsure" or "Work on extensions autonomously")}.
 Current self-summary: ${(state.selfSummary || '').slice(0, 200) || 'none'}
-Recent: ${recent}. Episodes: ${episodes || 'none'}. Goals: ${goals.map(g => g.text).join('; ') || 'none'}.`;
+Recent: ${recent}. Episodes: ${episodes || 'none'}. Goals: ${goals.map(g => g.text).join('; ') || 'none'}.${archivedLine}`;
     const out = await this.callLLM(prompt, null, { temperature: 0.5, num_predict: 350 });
     if (!out) return;
     try {
@@ -818,7 +877,13 @@ Recent: ${recent}. Episodes: ${episodes || 'none'}. Goals: ${goals.map(g => g.te
         this.memory.setGoals(parsed.goals.slice(0, 5).map((t, i) => ({ id: 'g' + Date.now() + i, text: String(t).slice(0, 300), status: 'active', createdAt: Date.now() })));
       }
       if (Array.isArray(parsed.facts)) {
-        parsed.facts.slice(0, 5).forEach(f => this.memory.addSemanticFact(String(f).slice(0, 400), 'deep_reflect'));
+        parsed.facts.slice(0, 5).forEach(f => {
+          const text = String(f).slice(0, 400);
+          this.memory.addSemanticFact(text, 'deep_reflect');
+          if (this.embedding && text) {
+            this.embedding.embed(text).then(v => v && this.memory.addEmbedding(text, v)).catch(() => {});
+          }
+        });
       }
       if (Array.isArray(parsed.selfInstructions)) {
         this.memory.addSelfInstructions(parsed.selfInstructions.slice(0, 3));

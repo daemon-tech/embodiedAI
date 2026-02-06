@@ -43,5 +43,16 @@
   "metaReviewEveryTicks": 20,
   "runawaySameActionThreshold": 6,
   "runawayConsecutiveErrors": 3,
-  "appPath": "D:\\code-space\\embodiedAI"
+  "appPath": "D:\\code-space\\embodiedAI",
+  "dryRun": false,
+  "curiosityDepth": 3,
+  "archiveEveryTicks": 100,
+  "highLoadMemoryMB": 800,
+  "requireRiskyApproval": true,
+  "modelPriority": "ollama",
+  "secondaryOllamaModel": "",
+  "chatHistoryCap": 300,
+  "maxChatMessageChars": 1000,
+  "hormoneResetCortisolThreshold": 0.9,
+  "hormoneResetTicks": 10
 }

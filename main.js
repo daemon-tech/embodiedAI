@@ -32,6 +32,8 @@ let mindLoop = null;
 const CONFIG_PATH = path.join(__dirname, 'config.json');
 const MEMORY_PATH = path.join(app.getPath('userData'), 'memory.json');
 const MEMORY_BRAIN_PATH = path.join(app.getPath('userData'), 'memory_brain.json');
+const ARCHIVE_PATH = path.join(app.getPath('userData'), 'archive.json.gz');
+const AUDIT_LOG_PATH = path.join(app.getPath('userData'), 'audit_log.json');
 const MODELS_PATH = path.join(app.getPath('userData'), 'models');
 
 function normalizeOllamaUrl(url) {
@@ -139,6 +141,17 @@ function getDefaultConfig() {
     metaReviewEveryTicks: 20,
     runawaySameActionThreshold: 6,
     runawayConsecutiveErrors: 3,
+    dryRun: false,
+    curiosityDepth: 3,
+    archiveEveryTicks: 100,
+    highLoadMemoryMB: 800,
+    requireRiskyApproval: true,
+    modelPriority: 'ollama',
+    secondaryOllamaModel: '',
+    chatHistoryCap: 300,
+    maxChatMessageChars: 1000,
+    hormoneResetCortisolThreshold: 0.9,
+    hormoneResetTicks: 10,
   };
 }
 
@@ -184,7 +197,7 @@ app.whenReady().then(async () => {
   try {
     await fs.mkdir(MODELS_PATH, { recursive: true });
   } catch (_) {}
-  memory = new Memory(MEMORY_PATH, MEMORY_BRAIN_PATH);
+  memory = new Memory(MEMORY_PATH, MEMORY_BRAIN_PATH, ARCHIVE_PATH, AUDIT_LOG_PATH);
   try {
     await memory.load();
   } catch (err) {
@@ -448,10 +461,37 @@ ipcMain.handle('choose-folder', async () => {
   if (!allowed.some(d => path.resolve(d) === dir)) {
     config.allowedDirs = [...allowed, dir];
     config.workspacePath = config.workspacePath || dir;
+    if (perception) perception.allowedDirs = config.allowedDirs;
+    if (action) action.allowedDirs = config.allowedDirs;
+    if (curiosity) curiosity.allowedDirs = config.allowedDirs;
     configSaveScheduled = true;
     await flushConfigSave();
   }
   return dir;
+});
+ipcMain.handle('add-allowed-dir', async (_, dirPath) => {
+  if (!dirPath || typeof dirPath !== 'string') return { ok: false };
+  const dir = path.resolve(dirPath.trim());
+  const allowed = dedupeAllowedDirs(config.allowedDirs);
+  if (allowed.some(d => path.resolve(d) === dir)) return { ok: true, already: true };
+  config.allowedDirs = [...allowed, dir];
+  config.workspacePath = config.workspacePath || dir;
+  if (perception) perception.allowedDirs = config.allowedDirs;
+  if (action) action.allowedDirs = config.allowedDirs;
+  if (curiosity) curiosity.allowedDirs = config.allowedDirs;
+  configSaveScheduled = true;
+  await flushConfigSave();
+  return { ok: true };
+});
+ipcMain.handle('add-allowed-host', async (_, host) => {
+  if (!host || typeof host !== 'string') return { ok: false };
+  const h = host.trim().toLowerCase();
+  if (!config.allowedHosts) config.allowedHosts = ['*'];
+  if (config.allowedHosts.includes('*') || config.allowedHosts.includes(h)) return { ok: true, already: true };
+  config.allowedHosts = [...config.allowedHosts, h];
+  configSaveScheduled = true;
+  await flushConfigSave();
+  return { ok: true };
 });
 ipcMain.handle('save-config', async (_, newConfig) => {
   const safe = { ...newConfig };

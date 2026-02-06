@@ -35,9 +35,19 @@ function isAllowedUrlProtocol(urlStr) {
   }
 }
 
-/** Allowed terminal commands: must start with configured prefixes (or defaults). No rm -rf /, no sudo. */
+/** Allowed terminal commands: must start with configured prefixes (or defaults). Block dangerous patterns. */
 const DEFAULT_CMD_PREFIXES = ['npm ', 'npx ', 'node ', 'node.exe ', 'dir ', 'ls ', 'git '];
-const BLOCKED_PATTERNS = [/rm\s+-rf\s+\//, /sudo\s/, />\s*\/etc\//, /\|\s*sh\s*$/];
+const BLOCKED_PATTERNS = [
+  /rm\s+-rf\s+\//, /\brm\s+-rf\s+/i, /\brm\s+-\*\s+/i, /\brm\s+.*\/\s*$/,
+  /\bsudo\b/i, /\bsu\s+-\s*$/,
+  />\s*\/etc\//, /\|\s*sh\s*$/, /\|\s*bash\s*$/i,
+  /\bdd\s+if=.*of=\/dev\//i, /\bdd\s+of=\/dev\/sd/i,
+  /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;?\s*:/,  // fork bomb
+  /\bmkfs\./i, /\bformat\s+/i,
+  /chmod\s+-R\s+777\s+\//i, /chown\s+-R\s+.*\s+\//i,
+  />\s*\/\s*$/, /\|\s*tee\s+\/etc\//i,
+  /\bwget\s+.*\|\s*sh\s*$/i, /\bcurl\s+.*\|\s*(?:bash|sh)\s*$/i,
+];
 function isAllowedCommand(cmdStr, config) {
   if (!cmdStr || typeof cmdStr !== 'string') return false;
   const c = cmdStr.trim();
@@ -49,4 +59,21 @@ function isAllowedCommand(cmdStr, config) {
   return prefixes.some(prefix => c.toLowerCase().startsWith(prefix.toLowerCase().trimEnd()));
 }
 
-module.exports = { isAllowedPath, isAllowedHost, isAllowedUrlProtocol, isAllowedCommand };
+/** True if command is complex or potentially risky (e.g. multiple pipes, long, or contains shell metachars). */
+function isRiskyCommand(cmdStr) {
+  if (!cmdStr || typeof cmdStr !== 'string') return false;
+  const c = cmdStr.trim();
+  if (c.length > 200) return true;
+  if ((c.match(/\|/g) || []).length >= 2) return true;
+  if (/[;&]/.test(c)) return true;
+  return false;
+}
+
+/** True if path is mind/agent_extensions.js (risky to edit without approval). */
+function isAgentExtensionsPath(filePath, appPath) {
+  if (!filePath || !appPath) return false;
+  const extPath = path.resolve(appPath, 'mind', 'agent_extensions.js');
+  return path.resolve(filePath) === extPath;
+}
+
+module.exports = { isAllowedPath, isAllowedHost, isAllowedUrlProtocol, isAllowedCommand, isRiskyCommand, isAgentExtensionsPath };

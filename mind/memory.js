@@ -1,11 +1,14 @@
 const fs = require('fs').promises;
 const path = require('path');
+const zlib = require('zlib');
 
 const MAX_ENTRIES = 10000;
 const MAX_THOUGHTS = 20000;
 const MAX_LOGS = 50000;
 const MAX_EMBEDDINGS = 2000;
-const MAX_CHAT = 200;
+const MAX_CHAT = 300;
+const MAX_CHAT_MESSAGE_CHARS = 1000;
+const ARCHIVE_CHUNK = 500;
 const MAX_NEURONS = 100000;
 const MAX_SYNAPSES = 500000;
 const MAX_INNER_THOUGHTS = 200;
@@ -45,9 +48,12 @@ function loadAgentExtensions() {
 }
 
 class Memory {
-  constructor(filePath, brainFilePath = null) {
+  constructor(filePath, brainFilePath = null, archiveFilePath = null, auditLogPath = null) {
     this.filePath = filePath;
     this.brainFilePath = brainFilePath || null;
+    this.archiveFilePath = archiveFilePath || path.join(path.dirname(filePath), 'archive.json.gz');
+    this.auditLogPath = auditLogPath || path.join(path.dirname(filePath), 'audit_log.json');
+    this._cortisolHighTicks = 0;
     this.data = {
       exploredPaths: {},
       exploredUrls: {},
@@ -591,7 +597,7 @@ class Memory {
 
   addChatMessage(role, content) {
     if (!Array.isArray(this.data.chatHistory)) this.data.chatHistory = [];
-    this.data.chatHistory.push({ role, content: String(content).slice(0, 4000), t: Date.now() });
+    this.data.chatHistory.push({ role, content: String(content).slice(0, MAX_CHAT_MESSAGE_CHARS), t: Date.now() });
     if (this.data.chatHistory.length > MAX_CHAT) this.data.chatHistory.shift();
   }
 
@@ -673,6 +679,7 @@ Capabilities: ${caps}`;
   }
 
   addEmbedding(text, vector) {
+    if (!Array.isArray(vector) || vector.length === 0) return;
     if (!Array.isArray(this.data.embeddings)) this.data.embeddings = [];
     this.data.embeddings.push({ text: String(text).slice(0, 500), vector, t: Date.now() });
     if (this.data.embeddings.length > MAX_EMBEDDINGS) this.data.embeddings.shift();
@@ -698,6 +705,95 @@ Capabilities: ${caps}`;
       .map(k => ({ k, at: obj[k].at || 0 }))
       .sort((a, b) => a.at - b.at);
     byTime.slice(0, keys.length - max).forEach(({ k }) => delete obj[k]);
+  }
+
+  /** Archive oldest thoughts, episodes, semanticFacts, chatHistory to archive.json.gz. */
+  async archive() {
+    const toArchive = { thoughts: [], episodes: [], semanticFacts: [], chatHistory: [] };
+    if (this.data.thoughts.length > MAX_THOUGHTS - ARCHIVE_CHUNK) {
+      const n = this.data.thoughts.length - (MAX_THOUGHTS - ARCHIVE_CHUNK);
+      toArchive.thoughts = this.data.thoughts.splice(0, n);
+    }
+    if (this.data.episodes.length > MAX_EPISODES - ARCHIVE_CHUNK) {
+      const n = this.data.episodes.length - (MAX_EPISODES - ARCHIVE_CHUNK);
+      toArchive.episodes = this.data.episodes.splice(0, n);
+    }
+    if (this.data.semanticFacts.length > MAX_SEMANTIC_FACTS - ARCHIVE_CHUNK) {
+      const n = this.data.semanticFacts.length - (MAX_SEMANTIC_FACTS - ARCHIVE_CHUNK);
+      toArchive.semanticFacts = this.data.semanticFacts.splice(0, n);
+    }
+    if (this.data.chatHistory.length > MAX_CHAT - ARCHIVE_CHUNK) {
+      const n = this.data.chatHistory.length - (MAX_CHAT - ARCHIVE_CHUNK);
+      toArchive.chatHistory = this.data.chatHistory.splice(0, n);
+    }
+    if (toArchive.thoughts.length === 0 && toArchive.episodes.length === 0 && toArchive.semanticFacts.length === 0 && toArchive.chatHistory.length === 0) return;
+    try {
+      let existing = { thoughts: [], episodes: [], semanticFacts: [], chatHistory: [] };
+      try {
+        const raw = await fs.readFile(this.archiveFilePath);
+        const buf = zlib.gunzipSync(raw);
+        existing = JSON.parse(buf.toString('utf8'));
+      } catch (_) {}
+      existing.thoughts = (existing.thoughts || []).concat(toArchive.thoughts).slice(-50000);
+      existing.episodes = (existing.episodes || []).concat(toArchive.episodes).slice(-10000);
+      existing.semanticFacts = (existing.semanticFacts || []).concat(toArchive.semanticFacts).slice(-5000);
+      existing.chatHistory = (existing.chatHistory || []).concat(toArchive.chatHistory).slice(-2000);
+      await fs.mkdir(path.dirname(this.archiveFilePath), { recursive: true });
+      await fs.writeFile(this.archiveFilePath, zlib.gzipSync(JSON.stringify(existing), { level: 6 }), 'binary');
+    } catch (err) {
+      console.error('Memory archive error:', err.message);
+    }
+  }
+
+  /** Load archived items for prompt building (e.g. deepReflect/metaReview). Returns last n thoughts + facts. */
+  async getArchivedForPrompt(nThoughts = 10, nFacts = 10) {
+    try {
+      const raw = await fs.readFile(this.archiveFilePath);
+      const data = JSON.parse(zlib.gunzipSync(raw).toString('utf8'));
+      const thoughts = (data.thoughts || []).slice(-nThoughts).reverse().map(t => t.text || t).join(' | ') || '';
+      const facts = (data.semanticFacts || []).slice(-nFacts).reverse().map(f => f.fact || f).join(' | ') || '';
+      return { thoughts, facts };
+    } catch (_) {
+      return { thoughts: '', facts: '' };
+    }
+  }
+
+  /** If cortisol above threshold for enough ticks, halve all hormones. Call from loop after decay. */
+  checkHormoneReset(cortisolThreshold = 0.9, ticksRequired = 10) {
+    const h = this.data.state.hormones || { ...DEFAULT_HORMONES };
+    if ((h.cortisol || 0) >= cortisolThreshold) {
+      this._cortisolHighTicks = (this._cortisolHighTicks || 0) + 1;
+      if (this._cortisolHighTicks >= ticksRequired) {
+        const half = (v) => Math.max(0, Math.min(1, (v ?? 0.5) * 0.5));
+        this.data.state.hormones = {
+          dopamine: half(h.dopamine),
+          cortisol: half(h.cortisol),
+          serotonin: half(h.serotonin),
+        };
+        this._cortisolHighTicks = 0;
+        this.setState({ hormones: this.data.state.hormones });
+      }
+    } else {
+      this._cortisolHighTicks = 0;
+    }
+  }
+
+  /** Append an audit log entry (type, args, outcome) to audit_log.json. */
+  async addAuditLog(entry) {
+    const record = { t: Date.now(), ...entry };
+    try {
+      let list = [];
+      try {
+        const raw = await fs.readFile(this.auditLogPath, 'utf8');
+        list = JSON.parse(raw);
+      } catch (_) {}
+      list.push(record);
+      list = list.slice(-5000);
+      await fs.mkdir(path.dirname(this.auditLogPath), { recursive: true });
+      await fs.writeFile(this.auditLogPath, JSON.stringify(list, null, 0), 'utf8');
+    } catch (err) {
+      console.error('Audit log error:', err.message);
+    }
   }
 }
 

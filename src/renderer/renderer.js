@@ -470,6 +470,15 @@
   }));
 
   if (window.api.onError) unsubscribes.push(window.api.onError(showToast));
+  if (window.api.onToast) unsubscribes.push(window.api.onToast((payload) => showToast(payload && payload.message ? payload.message : String(payload || ''))));
+
+  (async function initSimulationBadge() {
+    try {
+      const cfg = await window.api.getConfig();
+      const badge = document.getElementById('simulation-badge');
+      if (badge) badge.style.display = (cfg && cfg.dryRun) ? 'inline-block' : 'none';
+    } catch (_) {}
+  })();
 
   const ollamaBanner = document.getElementById('ollama-banner');
   const ollamaBannerText = document.getElementById('ollama-banner-text');

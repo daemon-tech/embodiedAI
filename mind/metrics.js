@@ -3,6 +3,7 @@
  * Tracks what she's doing right now (activity) and speed/latency metrics for analytical purposes.
  */
 
+const os = require('os');
 const ROLLING_SIZE = 30;
 const RATE_WINDOW_MS = 60000;
 
@@ -14,6 +15,14 @@ class Metrics {
     this.decideTimings = [];
     this.actionTimings = [];
     this.tickTimings = [];
+  }
+
+  /** Get current resource usage for throttling (memory in MB). */
+  getResourceUsage() {
+    const mem = process.memoryUsage();
+    const rssMB = (mem.rss || 0) / 1024 / 1024;
+    const heapMB = (mem.heapUsed || 0) / 1024 / 1024;
+    return { rssMB, heapMB, systemFreeMem: os.freemem(), systemTotalMem: os.totalmem() };
   }
 
   /** Set what she's doing right now. Phase: tick, decide, execute, reflect, idle, error. */
@@ -85,6 +94,7 @@ class Metrics {
         decideSamples: this.decideTimings.length,
         actionSamples: this.actionTimings.length,
       },
+      resource: this.getResourceUsage(),
     };
   }
 }

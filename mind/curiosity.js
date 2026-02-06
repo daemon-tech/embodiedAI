@@ -9,10 +9,9 @@ const fs = require('fs').promises;
 const RANDOM_EXPLORE_CHANCE = 0.2;
 const MAX_CANDIDATES = 50;
 const RE_EXPLORE_AFTER_MS = 1000 * 60 * 60 * 24; // 24h
-const MAX_DEPTH = 2;
 
-async function listFilesRecursive(dir, depth = 0) {
-  if (depth > MAX_DEPTH) return [];
+async function listFilesRecursive(dir, depth, maxDepth) {
+  if (depth > maxDepth) return [];
   const out = [];
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -20,13 +19,24 @@ async function listFilesRecursive(dir, depth = 0) {
       const full = path.join(dir, e.name);
       if (e.name.startsWith('.')) continue;
       if (e.isFile()) out.push(full);
-      else if (e.isDirectory() && depth < MAX_DEPTH) {
-        const sub = await listFilesRecursive(full, depth + 1);
+      else if (e.isDirectory() && depth < maxDepth) {
+        const sub = await listFilesRecursive(full, depth + 1, maxDepth);
         out.push(...sub);
       }
     }
   } catch (_) {}
   return out;
+}
+
+function goalKeywordScore(goals, pathOrUrl) {
+  if (!goals || !goals.length) return 1;
+  const text = (pathOrUrl || '').toLowerCase();
+  const goalWords = goals.map(g => (g.text || '').toLowerCase().split(/\s+/)).flat().filter(w => w.length > 2);
+  let match = 0;
+  for (const w of goalWords) {
+    if (text.includes(w)) match += 1;
+  }
+  return match > 0 ? 1 + Math.min(0.5, match * 0.15) : 1;
 }
 
 class Curiosity {
@@ -35,22 +45,25 @@ class Curiosity {
     this.config = config;
     this.allowedDirs = config.allowedDirs || [];
     this.weight = config.curiosityWeight ?? 0.9;
+    this.maxDepth = Math.min(5, Math.max(1, config.curiosityDepth ?? 3));
   }
 
   /**
-   * Pick next file to read: least recently explored in allowed dirs (with shallow recursion).
+   * Pick next file to read: least recently explored in allowed dirs (with recursion up to curiosityDepth).
    */
   async pickNextFileToRead() {
     const explored = this.memory.getExploredPaths();
+    const goals = this.memory.getGoals && this.memory.getGoals(true) || [];
     const candidates = [];
     for (const dir of this.allowedDirs) {
       try {
-        const files = await listFilesRecursive(dir, 0);
+        const files = await listFilesRecursive(dir, 0, this.maxDepth);
         for (const full of files) {
           const rec = explored[full];
           const at = rec ? rec.at : 0;
           const age = Date.now() - at;
-          const curiosityScore = rec ? Math.min(1, age / RE_EXPLORE_AFTER_MS) : 1;
+          let curiosityScore = rec ? Math.min(1, age / RE_EXPLORE_AFTER_MS) : 1;
+          curiosityScore *= goalKeywordScore(goals, full);
           candidates.push({ path: full, curiosityScore, at });
         }
       } catch (_) {
@@ -62,7 +75,9 @@ class Curiosity {
             const rec = explored[full];
             const at = rec ? rec.at : 0;
             const age = Date.now() - at;
-            candidates.push({ path: full, curiosityScore: rec ? Math.min(1, age / RE_EXPLORE_AFTER_MS) : 1, at });
+            let curiosityScore = rec ? Math.min(1, age / RE_EXPLORE_AFTER_MS) : 1;
+            curiosityScore *= goalKeywordScore(goals, full);
+            candidates.push({ path: full, curiosityScore, at });
           }
         }
       }
@@ -81,11 +96,13 @@ class Curiosity {
    */
   async pickNextDirToList() {
     const explored = this.memory.getExploredPaths();
+    const goals = this.memory.getGoals && this.memory.getGoals(true) || [];
     const candidates = this.allowedDirs.map(dir => {
       const rec = explored[dir];
       const at = rec ? rec.at : 0;
       const age = Date.now() - at;
-      const curiosityScore = rec ? (age / RE_EXPLORE_AFTER_MS) : 1;
+      let curiosityScore = rec ? (age / RE_EXPLORE_AFTER_MS) : 1;
+      curiosityScore *= goalKeywordScore(goals, dir);
       return { path: dir, curiosityScore };
     });
     candidates.sort((a, b) => b.curiosityScore - a.curiosityScore);
@@ -97,6 +114,7 @@ class Curiosity {
    */
   pickNextUrlToFetch() {
     const explored = this.memory.getExploredUrls();
+    const goals = this.memory.getGoals && this.memory.getGoals(true) || [];
     const seed = [
       'https://en.wikipedia.org/wiki/Special:Random',
       'https://news.ycombinator.com/',
@@ -110,7 +128,8 @@ class Curiosity {
       const rec = explored[url];
       const at = rec ? rec.at : 0;
       const age = Date.now() - at;
-      const curiosityScore = rec ? (age / RE_EXPLORE_AFTER_MS) : 1;
+      let curiosityScore = rec ? (age / RE_EXPLORE_AFTER_MS) : 1;
+      curiosityScore *= goalKeywordScore(goals, url);
       return { url, curiosityScore };
     });
     withScores.sort((a, b) => b.curiosityScore - a.curiosityScore);
