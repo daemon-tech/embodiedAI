@@ -332,7 +332,8 @@ class Thinking {
       const query = queryParts.join(' ').slice(0, 500) || 'what I am doing and my goals';
       const queryVector = await this.embedding.embed(query).catch(() => null);
       if (Array.isArray(queryVector) && queryVector.length > 0) {
-        const hits = this.memory.similaritySearch(queryVector, 8);
+        const hitCount = activeRetrieval ? 12 : 8;
+        const hits = this.memory.similaritySearch(queryVector, hitCount);
         if (hits.length > 0) {
           retrievedByMeaning = `\n**Memory (recalled by meaning)**: ${hits.map(h => (h.text || '').slice(0, 100)).filter(Boolean).join(' | ')}\n`;
         }

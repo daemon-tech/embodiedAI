@@ -32,18 +32,38 @@
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
 
+  function formatRelativeTime(ms) {
+    const sec = Math.floor((Date.now() - ms) / 1000);
+    if (sec < 60) return 'just now';
+    if (sec < 3600) return Math.floor(sec / 60) + 'm ago';
+    if (sec < 86400) return Math.floor(sec / 3600) + 'h ago';
+    return formatTime(ms);
+  }
+
   function renderThought(t, isNew) {
     const el = document.createElement('div');
-    el.className = 'item' + (isNew ? ' item-new' : '');
-    el.innerHTML = `<time>${formatTime(t.t)}</time>${escapeHtml(t.text)}`;
+    el.className = 'thought-item' + (isNew ? ' item-new' : '');
+    const timeTitle = formatTime(t.t);
+    const action = (t.action && String(t.action)) || '';
+    const actionHtml = action ? '<span class="thought-action">' + escapeHtml(action) + '</span>' : '';
+    el.innerHTML =
+      '<div class="thought-meta">' +
+      '<span class="thought-time" title="' + escapeHtml(timeTitle) + '">' + formatRelativeTime(t.t) + '</span>' +
+      actionHtml +
+      '</div>' +
+      '<div class="thought-text">' + escapeHtml(t.text || '') + '</div>';
     return el;
   }
 
   function renderLog(l) {
     const el = document.createElement('div');
-    el.className = 'item';
-    const payload = l.path || l.url || l.type || '';
-    el.innerHTML = `<time>${formatTime(l.t)}</time> ${escapeHtml(l.type)} ${escapeHtml(payload)}`;
+    el.className = 'log-item';
+    const type = l.type || 'log';
+    const payload = [l.path, l.url, l.target, l.command].filter(Boolean).join(' ') || '';
+    el.innerHTML =
+      '<span class="log-time" title="' + escapeHtml(formatTime(l.t)) + '">' + formatRelativeTime(l.t) + '</span>' +
+      '<span class="log-type">' + escapeHtml(type) + '</span>' +
+      (payload ? '<span class="log-payload" title="' + escapeHtml(payload) + '">' + escapeHtml(payload.slice(0, 120)) + (payload.length > 120 ? '…' : '') + '</span>' : '');
     return el;
   }
 
@@ -94,13 +114,17 @@
 
   async function refreshGoals() {
     const list = document.getElementById('goals-list');
+    const countEl = document.getElementById('goals-count');
     if (!list) return;
     try {
       const goals = await window.api.getGoals();
+      const all = goals || [];
+      const active = all.filter(g => g.status === 'active');
+      if (countEl) countEl.textContent = active.length + ' active' + (all.length > active.length ? ', ' + (all.length - active.length) + ' done' : '');
       list.innerHTML = '';
-      (goals || []).forEach(g => {
+      all.forEach(g => {
         const el = document.createElement('div');
-        el.className = 'goal-item';
+        el.className = 'goal-item' + (g.status === 'done' ? ' goal-done' : '');
         el.dataset.id = g.id;
         const textSpan = document.createElement('span');
         textSpan.className = 'goal-text';
@@ -127,10 +151,10 @@
       const arr = (await window.api.getInnerThoughts()) || [];
       list.innerHTML = '';
       if (emptyEl) emptyEl.style.display = arr.length === 0 ? 'block' : 'none';
-      arr.slice(0, 12).forEach((t, i) => {
+      arr.slice(0, 16).forEach((t, i) => {
         const el = document.createElement('div');
         el.className = 'inner-item' + (i === 0 ? ' inner-item-new' : '');
-        el.textContent = t.text;
+        el.innerHTML = '<span class="inner-time" title="' + escapeHtml(formatTime(t.t)) + '">' + formatRelativeTime(t.t) + '</span><div class="inner-text">' + escapeHtml(t.text || '') + '</div>';
         list.appendChild(el);
       });
     } catch (_) {}
@@ -154,10 +178,12 @@
   }
 
   async function refreshLogs() {
+    const emptyEl = document.getElementById('logs-empty');
     if (!logsList) return;
     try {
       const list = await window.api.getLogs(80);
       logsList.innerHTML = '';
+      if (emptyEl) emptyEl.style.display = list.length === 0 ? 'block' : 'none';
       list.forEach(l => logsList.appendChild(renderLog(l)));
     } catch (_) {}
   }

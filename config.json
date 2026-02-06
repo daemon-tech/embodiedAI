@@ -19,7 +19,7 @@
   "thinkIntervalMs": 8000,
   "minIntervalMs": 2000,
   "maxIntervalMs": 25000,
-  "continuousMode": true,
+  "continuousMode": false,
   "curiosityWeight": 0.9,
   "maxFileSizeBytes": 1048576,
   "maxHttpResponseBytes": 1048576,
@@ -38,5 +38,10 @@
     "python ",
     "python3 "
   ],
+  "useJudge": true,
+  "useSelfConsistency": false,
+  "metaReviewEveryTicks": 20,
+  "runawaySameActionThreshold": 6,
+  "runawayConsecutiveErrors": 3,
   "appPath": "D:\\code-space\\embodiedAI"
 }
