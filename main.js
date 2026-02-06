@@ -134,6 +134,8 @@ function getDefaultConfig() {
     speakThoughts: true,
     browserExternal: true,
     focusMode: false,
+    focusModeMinIntervalMs: 500,
+    streaming: true,
     allowClipboard: true,
     allowedCommandPrefixes: ['npm ', 'npx ', 'node ', 'node.exe ', 'dir ', 'ls ', 'git ', 'python ', 'python3 '],
     useJudge: true,

@@ -663,6 +663,57 @@
     }));
   }
 
+  if (window.api.onStreamThought) {
+    unsubscribes.push(window.api.onStreamThought((payload) => {
+      const phase = (payload && payload.phase) || 'decision';
+      const text = (payload && payload.text != null) ? String(payload.text) : '';
+      const done = payload && payload.done === true;
+      const streamEl = document.getElementById('live-thought-stream');
+      const currentEl = document.getElementById('current-thought');
+      const liveThoughtEl = document.getElementById('chat-live-thought');
+      const chatThinkingEl = document.getElementById('chat-thinking-current');
+      if (phase === 'decision' || phase === 'reflect') {
+        if (streamEl) {
+          streamEl.textContent = text;
+          streamEl.style.display = text ? 'block' : 'none';
+          streamEl.classList.toggle('streaming', !done);
+        }
+        if (done && currentEl) currentEl.textContent = text ? text.slice(0, 500) : '—';
+        if (done && liveThoughtEl) liveThoughtEl.textContent = text ? text.slice(0, 300) : '—';
+        if (done && streamEl) streamEl.style.display = 'none';
+      } else if (phase === 'chat') {
+        if (chatThinkingEl) {
+          chatThinkingEl.textContent = text;
+          chatThinkingEl.classList.toggle('streaming', !done);
+          chatThinkingEl.title = done ? '' : 'Laura is typing…';
+          if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+      }
+    }));
+  }
+
+  if (window.api.onStreamAction) {
+    unsubscribes.push(window.api.onStreamAction((payload) => {
+      const previewEl = document.getElementById('stream-action-preview');
+      if (!previewEl) return;
+      if (payload && payload.done === true) {
+        previewEl.style.display = 'none';
+        previewEl.innerHTML = '';
+        return;
+      }
+      if (payload && payload.type === 'edit_code' && payload.preview) {
+        const path = (payload.path || '').slice(-60);
+        const oldT = (payload.oldText || '').slice(0, 400);
+        const newT = (payload.newText || '').slice(0, 400);
+        previewEl.innerHTML =
+          '<div class="diff-path">' + escapeHtml(path) + '</div>' +
+          (oldT ? '<div class="diff-old">− ' + escapeHtml(oldT).replace(/\n/g, '<br>') + '</div>' : '') +
+          (newT ? '<div class="diff-new">+ ' + escapeHtml(newT).replace(/\n/g, '<br>') + '</div>' : '');
+        previewEl.style.display = 'block';
+      }
+    }));
+  }
+
   async function sendChat() {
     if (!chatInput || !chatMessages) return;
     let text = chatInput.value.trim();

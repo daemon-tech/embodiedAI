@@ -49,6 +49,8 @@ contextBridge.exposeInMainWorld('api', {
   onInnerThought: (cb) => subscribe('inner-thought', cb),
   onSelfConversation: (cb) => subscribe('self-conversation', cb),
   onChatThinking: (cb) => subscribe('chat-thinking', cb),
+  onStreamThought: (cb) => subscribe('stream-thought', cb),
+  onStreamAction: (cb) => subscribe('stream-action', cb),
   getMetrics: () => ipcRenderer.invoke('get-metrics'),
   getCurrentActivity: () => ipcRenderer.invoke('get-current-activity'),
   onActivity: (cb) => subscribe('activity', cb),

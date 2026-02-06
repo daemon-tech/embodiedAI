@@ -83,7 +83,15 @@
     .vital { display: flex; align-items: center; gap: 4px; }
     .vital .vital-label { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.1em; color: var(--muted); }
     .vital .vital-bar { width: 40px; height: 4px; background: var(--surface-elevated); border-radius: 2px; overflow: hidden; }
-    .vital .vital-fill { height: 100%; border-radius: 2px; transition: width 0.3s ease-out; }
+    .vital .vital-fill { height: 100%; border-radius: 2px; transition: width 0.25s ease-out; }
+    .vitals-drawer .bar-mini .fill { transition: width 0.25s ease-out; }
+    .live-thought-stream { margin-top: 6px; font-size: 11px; line-height: 1.4; color: var(--text); white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow-y: auto; }
+    .live-thought-stream.streaming::after { content: '▌'; animation: blink 0.8s step-end infinite; color: var(--accent); }
+    @keyframes blink { 50% { opacity: 0; } }
+    .stream-action-preview { margin-top: 8px; padding: 8px 10px; background: var(--surface-elevated); border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 10px; max-height: 180px; overflow: auto; }
+    .stream-action-preview .diff-path { color: var(--accent); margin-bottom: 6px; }
+    .stream-action-preview .diff-old { color: var(--danger); white-space: pre-wrap; word-break: break-word; }
+    .stream-action-preview .diff-new { color: var(--success); white-space: pre-wrap; word-break: break-word; }
     .vital .vital-num { font-family: var(--font-mono); font-size: 8px; color: var(--muted); min-width: 24px; text-align: right; }
     .living-badge { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.12em; padding: 3px 8px; border-radius: 2px; background: rgba(0,255,136,0.15); color: var(--success); border: 1px solid var(--success); transition: all 0.25s; }
     .living-badge.paused { background: rgba(255,170,0,0.2); color: var(--warn); border-color: var(--warn); }
@@ -237,6 +245,7 @@
     .chat-panel .chat-msg.system::before { content: 'System'; font-weight: 600; color: var(--muted); margin-right: 6px; font-size: 9px; }
     .chat-panel .chat-msg.thinking { color: var(--text-dim); font-style: italic; }
     .chat-panel .chat-msg.thinking::before { content: 'Laura'; font-weight: 600; color: var(--accent); margin-right: 6px; font-style: normal; font-size: 9px; }
+    .chat-panel .chat-msg.thinking.streaming::after { content: '▌'; animation: blink 0.8s step-end infinite; color: var(--accent); }
     /* Cursor-style: thinking block with timing (Thought Xs) */
     .chat-panel .chat-msg.stream { margin-bottom: 10px; padding: 10px 12px; border-radius: 6px; border-left: 3px solid var(--accent); background: rgba(255,0,64,0.08); }
     .chat-panel .chat-msg.stream .stream-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
@@ -410,6 +419,8 @@
             <div class="chat-live-reason" id="chat-live-reason"></div>
             <div class="chat-live-action" id="chat-live-action"></div>
             <div class="chat-live-thought" id="chat-live-thought">—</div>
+            <div id="live-thought-stream" class="live-thought-stream" aria-live="polite" style="display:none;"></div>
+            <div id="stream-action-preview" class="stream-action-preview" style="display:none;" aria-live="polite"></div>
           </div>
           <div class="chat-feedback-row">
             <span class="chat-feedback-label">Feedback (HITL):</span>

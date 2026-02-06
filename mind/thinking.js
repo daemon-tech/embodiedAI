@@ -280,6 +280,7 @@ class Thinking {
       const u = new URL(url);
       const isHttps = u.protocol === 'https:';
       const lib = isHttps ? nodeHttps : nodeHttp;
+      const bodyStr = JSON.stringify(body);
       let buffer = '';
       let full = '';
       const throttledSend = throttle((text, done) => {
@@ -293,16 +294,22 @@ class Thinking {
         throttledSend(text, false);
       };
       await new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (val) => {
+          if (settled) return;
+          settled = true;
+          resolve(val);
+        };
         const req = lib.request({
           hostname: u.hostname,
           port: u.port || (isHttps ? 443 : 80),
           path: u.pathname + u.search,
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr, 'utf8') },
         }, (res) => {
           if (res.statusCode < 200 || res.statusCode >= 300) {
             res.resume();
-            return resolve(null);
+            return finish(null);
           }
           res.on('data', (chunk) => {
             buffer += chunk.toString('utf8');
@@ -315,7 +322,7 @@ class Thinking {
                 if (obj.response) full += obj.response;
                 if (obj.done) {
                   send(full, true);
-                  return resolve(full);
+                  return finish(full);
                 }
                 send(full, false);
               } catch (_) {}
@@ -329,13 +336,13 @@ class Thinking {
               } catch (_) {}
             }
             send(full, true);
-            resolve(full);
+            finish(full);
           });
           res.on('error', reject);
         });
         req.on('error', reject);
         req.setTimeout(120000, () => { req.destroy(); reject(new Error('Timeout')); });
-        req.write(JSON.stringify(body));
+        req.write(bodyStr);
         req.end();
       });
       return full.trim() || null;
@@ -653,8 +660,15 @@ Meta-cognition: If you have uncertainty or a limitation in your reasoning, you m
 I want to see what's in that file.
 {"type":"read_file","path":"C:\\\\Users\\\\Documents\\\\notes.txt","nextIntervalMs":5000,"reason":"I want to read that."}`;
 
-    let out = await this.callLLMWithRetry(prompt, this.getPrompts().systemPrompt, { temperature: focusMode ? 0.5 : 0.6, num_predict: 512 }, { maxRetries: 3, backoffMs: 1000 });
-    if (!out) return this.fallbackAction(hormones);
+    const useStream = this.sendToRenderer && this.config.streaming !== false;
+    const onStream = useStream ? (text, done) => this.sendToRenderer('stream-thought', { phase: 'decision', text, done }) : null;
+    let out = useStream
+      ? await this.callLLMStream(prompt, this.getPrompts().systemPrompt, { temperature: focusMode ? 0.5 : 0.6, num_predict: 512 }, onStream)
+      : await this.callLLMWithRetry(prompt, this.getPrompts().systemPrompt, { temperature: focusMode ? 0.5 : 0.6, num_predict: 512 }, { maxRetries: 3, backoffMs: 1000 });
+    if (!out) {
+      if (useStream) out = await this.callLLMWithRetry(prompt, this.getPrompts().systemPrompt, { temperature: 0.5, num_predict: 512 }, { maxRetries: 2, backoffMs: 1000 });
+      if (!out) return this.fallbackAction(hormones);
+    }
 
     try {
       const raw = out.replace(/```json?\s*|\s*```/g, '').trim();
@@ -773,10 +787,14 @@ What did you learn in one short sentence? Reply with ONLY that sentence. No quot
   async reflect(action, result, outcome) {
     const prompt = `You (Laura, the agent) just did: ${action.type}${action.path ? ' ' + action.path : ''}${action.url ? ' ' + action.url : ''}${action.target ? ' target=' + action.target : ''}. Outcome: ${outcome}. Say one short first-person sentence. No JSON, no quotes, just the sentence.`;
     const REFLECT_TIMEOUT_MS = 7000;
+    const useStream = this.sendToRenderer && this.config.streaming !== false;
+    const onStream = useStream ? (text, done) => this.sendToRenderer('stream-thought', { phase: 'reflect', text, done }) : null;
     let out;
     try {
       out = await Promise.race([
-        this.callLLM(prompt, this.getPrompts().systemPrompt, { temperature: 0.8, num_predict: 50 }),
+        useStream
+          ? this.callLLMStream(prompt, this.getPrompts().systemPrompt, { temperature: 0.8, num_predict: 50 }, onStream)
+          : this.callLLM(prompt, this.getPrompts().systemPrompt, { temperature: 0.8, num_predict: 50 }),
         new Promise((_, rej) => setTimeout(() => rej(new Error('reflect_timeout')), REFLECT_TIMEOUT_MS)),
       ]);
     } catch (_) {
@@ -1003,14 +1021,18 @@ ${chatRetrievedByMeaning}`;
       ? `${context}\n\nConversation:\n${historyStr}\n\nUser: ${userMessage}\n\nLaura, reply as yourself—from your whole self. If relevant, mention what you're doing or feeling:`
       : `${context}\n\nUser: ${userMessage}\n\nLaura, reply as yourself—from your whole self. If relevant, mention what you're doing or feeling:`;
     const CHAT_TIMEOUT_MS = 90000;
+    const useChatStream = this.sendToRenderer && this.config.streaming !== false;
+    const onChatStream = useChatStream ? (text, done) => this.sendToRenderer('stream-thought', { phase: 'chat', text, done }) : null;
     let reply = await Promise.race([
-      this.callLLMWithRetry(prompt, this.getPrompts().chatPrompt, { temperature: 0.8, num_predict: 400 }, { maxRetries: 2, backoffMs: 2000 }),
+      useChatStream
+        ? this.callLLMStream(prompt, this.getPrompts().chatPrompt, { temperature: 0.8, num_predict: 400 }, onChatStream)
+        : this.callLLMWithRetry(prompt, this.getPrompts().chatPrompt, { temperature: 0.8, num_predict: 400 }, { maxRetries: 2, backoffMs: 2000 }),
       new Promise(r => setTimeout(() => r(null), CHAT_TIMEOUT_MS)),
     ]);
     if (!reply || !reply.trim()) {
       await new Promise(r => setTimeout(r, 3000));
       reply = await Promise.race([
-        this.callLLM(prompt, this.getPrompts().chatPrompt, { temperature: 0.8, num_predict: 400 }),
+        useChatStream ? this.callLLMStream(prompt, this.getPrompts().chatPrompt, { temperature: 0.8, num_predict: 400 }, onChatStream) : this.callLLM(prompt, this.getPrompts().chatPrompt, { temperature: 0.8, num_predict: 400 }),
         new Promise(r => setTimeout(() => r(null), CHAT_TIMEOUT_MS)),
       ]);
     }

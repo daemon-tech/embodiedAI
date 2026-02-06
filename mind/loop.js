@@ -76,9 +76,10 @@ class MindLoop {
     this.timer = setTimeout(() => this.tick(), Math.max(0, ms));
   }
 
-  _getIntervalBounds() {
+  _getIntervalBounds(focusMode = false) {
     const continuous = Boolean(this.config.continuousMode);
-    const min = continuous ? 800 : (this.config.minIntervalMs ?? DEFAULT_MIN_INTERVAL);
+    let min = continuous ? 800 : (this.config.minIntervalMs ?? DEFAULT_MIN_INTERVAL);
+    if (focusMode) min = Math.min(min, this.config.focusModeMinIntervalMs ?? 500);
     const max = continuous ? Math.min(5000, this.config.maxIntervalMs ?? DEFAULT_MAX_INTERVAL) : (this.config.maxIntervalMs ?? DEFAULT_MAX_INTERVAL);
     return { min, max };
   }
@@ -175,7 +176,7 @@ class MindLoop {
     const executeStart = Date.now();
     let thought = '';
 
-    const { min: minMs, max: maxMs } = this._getIntervalBounds();
+    const { min: minMs, max: maxMs } = this._getIntervalBounds(focusMode);
     let nextInterval = Math.min(maxMs, Math.max(minMs, Number(action.nextIntervalMs) || this.intervalMs));
     if (focusMode) nextInterval = Math.min(nextInterval, effectiveIntervalMs);
     this.intervalMs = nextInterval;
@@ -448,10 +449,12 @@ class MindLoop {
           logPayload.path = targetPath;
           logPayload.ok = true;
         } else {
-        let content = '';
-        try {
-          content = await fs.readFile(targetPath, 'utf8');
-        } catch (e) {
+          this.sendToRenderer('stream-action', { type: 'edit_code', path: targetPath, oldText: action.oldText, newText: action.newText, preview: true });
+          try {
+            let content = '';
+            try {
+              content = await fs.readFile(targetPath, 'utf8');
+            } catch (e) {
           this.memory.setLastError('edit_code: could not read file');
           thought = await this.thinking.reflect(action, { ok: false, error: e.message }, e.message) || `I couldn't read the file to edit.`;
         }
@@ -491,6 +494,9 @@ class MindLoop {
         if (isAgentExtensionsPath(targetPath, appPath)) {
           this.thinking.metaReview().catch(() => {});
         }
+          } finally {
+            this.sendToRenderer('stream-action', { done: true });
+          }
         }
       } else {
         const state = this.memory.getState();
