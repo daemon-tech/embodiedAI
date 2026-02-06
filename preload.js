@@ -1,0 +1,53 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+function subscribe(channel, cb) {
+  const handler = (_, ...args) => cb(...args);
+  ipcRenderer.on(channel, handler);
+  return () => ipcRenderer.removeListener(channel, handler);
+}
+
+contextBridge.exposeInMainWorld('api', {
+  getConfig: () => ipcRenderer.invoke('get-config'),
+  getResourceUsage: () => ipcRenderer.invoke('get-resource-usage'),
+  getOllamaModels: () => ipcRenderer.invoke('get-ollama-models'),
+  setModel: (name) => ipcRenderer.invoke('set-model', name),
+  testOllama: () => ipcRenderer.invoke('test-ollama'),
+  getModelsPath: () => ipcRenderer.invoke('get-models-path'),
+  getMemoryStats: () => ipcRenderer.invoke('get-memory-stats'),
+  getHormones: () => ipcRenderer.invoke('get-hormones'),
+  getLivingState: () => ipcRenderer.invoke('get-living-state'),
+  getThoughts: (n) => ipcRenderer.invoke('get-thoughts', n),
+  getLogs: (n) => ipcRenderer.invoke('get-logs', n),
+  getChatHistory: () => ipcRenderer.invoke('get-chat-history'),
+  getInnerThoughts: () => ipcRenderer.invoke('get-inner-thoughts'),
+  getGoals: () => ipcRenderer.invoke('get-goals'),
+  setGoal: (text) => ipcRenderer.invoke('set-goal', text),
+  completeGoal: (id) => ipcRenderer.invoke('complete-goal', id),
+  humanFeedback: (rating, comment) => ipcRenderer.invoke('human-feedback', { rating, comment: comment || '' }),
+  sendChat: (text) => ipcRenderer.invoke('send-chat', text),
+  thinkOnce: () => ipcRenderer.invoke('think-once'),
+  pauseLoop: () => ipcRenderer.invoke('pause-loop'),
+  resumeLoop: () => ipcRenderer.invoke('resume-loop'),
+  speak: (text) => ipcRenderer.invoke('speak', text),
+  browse: (url) => ipcRenderer.invoke('browse', url),
+  readFile: (path) => ipcRenderer.invoke('read-file', path),
+  listDir: (path) => ipcRenderer.invoke('list-dir', path),
+  writeFile: (path, content) => ipcRenderer.invoke('write-file', path, content),
+  fetchUrl: (url, options) => ipcRenderer.invoke('fetch-url', url, options),
+  chooseFolder: () => ipcRenderer.invoke('choose-folder'),
+  saveConfig: (config) => ipcRenderer.invoke('save-config', config),
+  onThought: (cb) => subscribe('thought', cb),
+  onHormones: (cb) => subscribe('hormones', cb),
+  onLog: (cb) => subscribe('log', cb),
+  onLoopStatus: (cb) => subscribe('loop-status', cb),
+  onSpeakRequest: (cb) => subscribe('speak-request', cb),
+  onError: (cb) => subscribe('error', cb),
+  onOllamaUnavailable: (cb) => subscribe('ollama-unavailable', cb),
+  onInnerThought: (cb) => subscribe('inner-thought', cb),
+  onSelfConversation: (cb) => subscribe('self-conversation', cb),
+  onChatThinking: (cb) => subscribe('chat-thinking', cb),
+  getMetrics: () => ipcRenderer.invoke('get-metrics'),
+  getCurrentActivity: () => ipcRenderer.invoke('get-current-activity'),
+  onActivity: (cb) => subscribe('activity', cb),
+  onMetrics: (cb) => subscribe('metrics', cb),
+});

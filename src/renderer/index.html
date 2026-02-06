@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com;" />
+  <title>Laura — Autonomous Mind</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Share+Tech+Mono&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0c0e12;
+      --bg-panel: #11141a;
+      --surface: #161b22;
+      --surface-elevated: #1c2229;
+      --border: rgba(0, 200, 180, 0.22);
+      --border-bright: rgba(0, 230, 210, 0.45);
+      --accent: #00c8b4;
+      --accent-glow: rgba(0, 200, 180, 0.2);
+      --gold: #00e6d2;
+      --text: #e8ecf0;
+      --text-dim: #8b9aa8;
+      --muted: #5c6a78;
+      --white: #ffffff;
+      --success: #3fb950;
+      --warn: #d29922;
+      --danger: #f85149;
+      --font-display: 'Orbitron', sans-serif;
+      --font-mono: 'Share Tech Mono', monospace;
+      --font-body: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 8px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
+
+    #scene-container { position: fixed; inset: 0; z-index: 0; }
+    #scene-container canvas { display: block; width: 100%; height: 100%; }
+
+    #ui { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; pointer-events: none; }
+    #ui > * { pointer-events: auto; }
+
+    .hud-top {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 6px 16px; background: linear-gradient(180deg, rgba(17,20,26,0.95) 0%, rgba(12,14,18,0.88) 100%);
+      border-bottom: 1px solid var(--border);
+      transition: padding 0.2s ease;
+    }
+    .hud-top::after {
+      content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.4;
+    }
+    .hud-brand { display: flex; align-items: baseline; gap: 8px; flex-shrink: 0; }
+    .hud-brand .logo { font-family: var(--font-display); font-size: 14px; font-weight: 700; letter-spacing: 0.18em; color: var(--gold); text-shadow: 0 0 16px var(--accent-glow); }
+    .hud-brand .tagline { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+    @media (max-width: 1200px) { .hud-brand .tagline { display: none; } }
+    .hud-status {
+      display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 2px;
+      font-family: var(--font-mono); font-size: 10px; color: var(--text-dim);
+    }
+    .hud-status .pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+    .hud-status .pulse.run { background: var(--success); box-shadow: 0 0 10px var(--success); animation: pulse 1.5s ease-in-out infinite; }
+    .hud-status .pulse.pause { background: var(--warn); }
+    .hud-status .pulse.stop { background: var(--danger); }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+    .hud-stats { font-family: var(--font-mono); font-size: 9px; color: var(--muted); letter-spacing: 0.03em; white-space: nowrap; }
+    .hud-stats .hi { color: var(--accent); }
+    .hud-stats-wrap { max-width: 160px; }
+    .model-block { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+    .model-block .model-label { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.1em; color: var(--accent); margin-bottom: 4px; }
+    .model-row { display: flex; gap: 6px; align-items: center; }
+    .model-row select { flex: 1; padding: 5px 8px; font-size: 10px; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 2px; font-family: inherit; }
+    .model-row select:focus { outline: none; border-color: var(--accent); }
+    .model-row .btn-apply { padding: 5px 10px; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.05em; background: var(--accent); color: var(--bg); border: none; border-radius: 2px; cursor: pointer; }
+    .model-row .btn-apply:hover { filter: brightness(1.1); }
+    .model-row .btn-apply:disabled { opacity: 0.6; cursor: not-allowed; }
+    .hud-vitals { display: flex; align-items: center; gap: 12px; }
+    .vital { display: flex; align-items: center; gap: 4px; }
+    .vital .vital-label { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.1em; color: var(--muted); }
+    .vital .vital-bar { width: 40px; height: 4px; background: var(--surface-elevated); border-radius: 2px; overflow: hidden; }
+    .vital .vital-fill { height: 100%; border-radius: 2px; transition: width 0.3s ease-out; }
+    .vital .vital-num { font-family: var(--font-mono); font-size: 8px; color: var(--muted); min-width: 24px; text-align: right; }
+    .living-badge { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.12em; padding: 3px 8px; border-radius: 2px; background: rgba(63,185,80,0.2); color: var(--success); border: 1px solid var(--success); transition: all 0.25s; }
+    .living-badge.paused { background: rgba(210,153,34,0.2); color: var(--warn); border-color: var(--warn); }
+    .living-badge.stop { background: rgba(248,81,73,0.2); color: var(--danger); border-color: var(--danger); }
+    .vitals-drawer { display: none; position: absolute; top: 100%; right: 0; margin-top: 6px; min-width: 280px; padding: 14px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: 0 8px 32px rgba(0,0,0,0.5); z-index: 50; }
+    .vitals-drawer.open { display: block; animation: thoughtEnter 0.2s ease-out; }
+    .vitals-drawer .vitals-title { font-family: var(--font-display); font-size: 10px; letter-spacing: 0.2em; color: var(--accent); margin-bottom: 12px; }
+    .vitals-drawer .vital-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; font-size: 11px; }
+    .vitals-drawer .vital-row .name { color: var(--text-dim); }
+    .vitals-drawer .vital-row .value { font-family: var(--font-mono); color: var(--text); }
+    .vitals-drawer .vital-row .bar-mini { width: 80px; height: 4px; background: var(--surface-elevated); border-radius: 2px; overflow: hidden; }
+    .vitals-drawer .vital-row .bar-mini .fill { height: 100%; border-radius: 2px; transition: width 0.25s; }
+    .vitals-drawer .section { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
+    .next-tick { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
+    .btn-vitals-toggle { padding: 4px 8px; font-size: 9px; }
+    .self-conclusion { padding: 10px 12px; margin-bottom: 12px; border-radius: var(--radius-sm); background: rgba(0,200,180,0.08); border-left: 3px solid var(--accent); font-size: 11px; line-height: 1.5; color: var(--text); }
+    .self-conclusion:empty { display: none; }
+    .self-conclusion .label { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.1em; color: var(--accent); margin-bottom: 4px; }
+    .self-msg { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 11px; line-height: 1.5; }
+    .self-msg .role { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em; color: var(--accent); margin-bottom: 4px; }
+    .self-msg.self .role { color: var(--accent); }
+    .self-msg.self_reply .role { color: var(--warn); }
+    .hud-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .btn-hud {
+      padding: 5px 10px; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.06em;
+      background: transparent; border: 1px solid var(--border); color: var(--text);
+      border-radius: 2px; cursor: pointer; transition: all 0.2s ease;
+    }
+    .btn-hud:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+    .btn-hud.active { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+    .btn-hud.focus-btn.active { border-color: var(--gold); color: var(--gold); box-shadow: 0 0 12px var(--accent-glow); }
+
+    .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 100; padding: 8px 16px; border-radius: 4px; background: rgba(239,83,80,0.95); color: var(--white); font-size: 11px; font-family: var(--font-body); max-width: 90%; border: 1px solid var(--danger); opacity: 0; transition: opacity 0.25s; pointer-events: none; }
+    .toast.visible { opacity: 1; }
+    .ollama-banner { display: none; padding: 6px 14px; background: rgba(0,200,180,0.1); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text); align-items: center; justify-content: center; gap: 12px; }
+    .ollama-banner.visible { display: flex; }
+    .ollama-banner .ollama-dismiss { padding: 4px 12px; font-size: 11px; background: transparent; border: 1px solid var(--border); color: var(--text-dim); border-radius: 2px; cursor: pointer; }
+    .ollama-banner .ollama-dismiss:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* ─── Main layout ─── */
+    .main { flex: 1; display: flex; min-height: 0; padding: 10px; gap: 10px; transition: padding 0.25s ease; }
+    .panel {
+      background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-md);
+      display: flex; flex-direction: column; overflow: hidden;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.35);
+      transition: width 0.25s ease, opacity 0.25s ease;
+    }
+    .panel-head {
+      padding: 8px 12px; border-bottom: 1px solid var(--border);
+      font-family: var(--font-display); font-size: 9px; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: var(--accent);
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    .panel-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+    /* ─── Left: Mind panel ─── */
+    .rail { width: 300px; flex-shrink: 0; }
+    .rail.collapsed { width: 0; min-width: 0; opacity: 0; pointer-events: none; overflow: hidden; }
+    .rail .panel-body { overflow-y: auto; display: flex; flex-direction: column; gap: 0; }
+    .rail-toggle { background: none; border: none; color: var(--muted); cursor: pointer; padding: 2px 4px; font-size: 11px; line-height: 1; transition: color 0.2s; }
+    .rail-toggle:hover { color: var(--accent); }
+    .rail-toggle-restore { display: none; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); z-index: 5; background: var(--bg-panel); border: 1px solid var(--border); color: var(--accent); padding: 6px 10px; font-size: 9px; font-family: var(--font-mono); cursor: pointer; border-radius: var(--radius-sm); align-items: center; gap: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+    .rail-toggle-restore:hover { background: var(--surface); border-color: var(--accent); }
+    .main.rail-collapsed .rail-toggle-restore { display: flex; }
+    .mind-section { margin-bottom: 0; }
+    .mind-section-title { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; padding: 0 2px; }
+    .now-block {
+      padding: 14px 14px; margin: 0 10px 12px; border-radius: var(--radius-md);
+      background: var(--surface); border: 1px solid var(--border);
+      box-shadow: 0 1px 0 rgba(0,0,0,0.2);
+      transition: box-shadow 0.35s ease, border-color 0.35s ease;
+    }
+    .now-block .now-label { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.15em; color: var(--accent); margin-bottom: 6px; }
+    .now-block .now-text { font-size: 12px; line-height: 1.5; color: var(--text); word-break: break-word; }
+    .now-block .now-reason { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 10px; line-height: 1.45; color: var(--text-dim); font-style: italic; }
+    .now-block .now-reason:empty { display: none; }
+    .now-block .now-tag { display: inline-block; margin-top: 8px; padding: 3px 10px; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em; background: var(--accent-glow); color: var(--accent); border-radius: 4px; }
+    .now-block.live { border-color: rgba(0,200,180,0.4); box-shadow: 0 0 24px var(--accent-glow); animation: liveBreath 4s ease-in-out infinite; }
+    @keyframes liveBreath { 0%, 100% { opacity: 1; } 50% { opacity: 0.94; } }
+    .tabs { display: flex; border-bottom: 1px solid var(--border); padding: 0 10px; gap: 2px; }
+    .tab { padding: 8px 10px; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em; color: var(--muted); background: transparent; border: none; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.2s; }
+    .tab:hover { color: var(--text-dim); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-content { display: none; flex: 1; overflow-y: auto; padding: 12px 14px; min-height: 120px; }
+    .tab-content.active { display: flex; flex-direction: column; }
+    .thought-item { padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; gap: 4px; transition: background 0.2s; }
+    .thought-item:hover { background: rgba(0,200,180,0.04); }
+    .thought-item .thought-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .thought-item .thought-time { font-family: var(--font-mono); font-size: 9px; color: var(--muted); }
+    .thought-item .thought-time[title] { cursor: help; }
+    .thought-item .thought-action { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.06em; padding: 2px 6px; border-radius: 3px; background: rgba(0,200,180,0.15); color: var(--accent); }
+    .thought-item .thought-text { font-size: 11px; line-height: 1.5; color: var(--text); word-break: break-word; }
+    .thought-item.item-new { animation: thoughtEnter 0.35s ease-out forwards; }
+    @keyframes thoughtEnter { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+    .log-item { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 11px; transition: background 0.2s; }
+    .log-item:hover { background: rgba(0,200,180,0.03); }
+    .log-item .log-time { font-family: var(--font-mono); font-size: 9px; color: var(--muted); flex-shrink: 0; }
+    .log-item .log-type { font-family: var(--font-mono); font-size: 8px; padding: 2px 6px; border-radius: 3px; background: var(--surface-elevated); color: var(--accent); }
+    .log-item .log-payload { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    .inner-item { padding: 10px 0 10px 12px; border-left: 3px solid var(--border); margin-bottom: 6px; background: rgba(255,255,255,0.02); border-radius: 0 4px 4px 0; transition: opacity 0.2s, border-color 0.2s; }
+    .inner-item:hover { border-left-color: var(--accent); }
+    .inner-item .inner-time { font-family: var(--font-mono); font-size: 9px; color: var(--muted); margin-bottom: 4px; }
+    .inner-item .inner-text { font-size: 11px; line-height: 1.5; color: var(--text); }
+    .inner-item.inner-item-new { animation: thoughtEnter 0.3s ease-out forwards; }
+    .empty-state { padding: 20px 14px; font-size: 11px; color: var(--muted); line-height: 1.5; text-align: center; }
+    .empty-state strong { display: block; margin-bottom: 6px; font-size: 10px; letter-spacing: 0.08em; color: var(--text-dim); }
+    .goals-block { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+    .goals-block .goals-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .goals-block .goals-head .mind-section-title { margin-bottom: 0; }
+    .goals-block .goals-count { font-family: var(--font-mono); font-size: 9px; color: var(--muted); }
+    .goal-item { padding: 8px 10px; margin-bottom: 6px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid transparent; display: flex; align-items: center; justify-content: space-between; gap: 8px; transition: border-color 0.2s; }
+    .goal-item:hover { border-color: var(--border); }
+    .goal-item .goal-text { flex: 1; min-width: 0; font-size: 11px; color: var(--text); line-height: 1.4; }
+    .goal-item.goal-done .goal-text { text-decoration: line-through; color: var(--muted); }
+    .goal-item .goal-done { padding: 4px 10px; font-family: var(--font-mono); font-size: 9px; background: rgba(63,185,80,0.2); color: var(--success); border: 1px solid var(--success); border-radius: 4px; cursor: pointer; transition: opacity 0.2s; }
+    .goal-item .goal-done:hover { opacity: 0.9; }
+    .goals-add { display: flex; gap: 8px; margin-top: 10px; }
+    .goals-add input { flex: 1; padding: 8px 12px; font-size: 11px; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); }
+    .goals-add input:focus { outline: none; border-color: var(--accent); }
+    .goals-add button { padding: 8px 14px; font-family: var(--font-mono); font-size: 10px; background: var(--accent); color: var(--bg); border: none; border-radius: var(--radius-sm); cursor: pointer; }
+    .goals-add button:hover { filter: brightness(1.1); }
+    #goals-list { max-height: 160px; overflow-y: auto; margin-bottom: 0; }
+    .tab-self-header { font-size: 10px; color: var(--muted); margin-bottom: 10px; line-height: 1.45; }
+
+    /* ─── Center: 3D + Neural ─── */
+    .center-space { flex: 1; min-width: 0; position: relative; border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border); }
+    .center-space .watermark { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-family: var(--font-display); font-size: 12px; font-weight: 700; letter-spacing: 0.4em; color: rgba(0,230,210,0.05); pointer-events: none; }
+    #neural-graph { display: none; /* 3D neural graph lives in scene with the orb */ }
+    #neural-graph svg { width: 100%; height: 100%; }
+    #neural-graph .link { stroke: rgba(0,200,180,0.12); stroke-width: 1; fill: none; }
+    #neural-graph .node { fill: rgba(0,230,210,0.5); stroke: none; filter: url(#soft-glow); }
+    #neural-graph .node.self { fill: rgba(0,230,210,0.6); filter: url(#soft-glow-strong); }
+    #neural-graph .label { font-size: 9px; font-family: var(--font-mono); fill: var(--text-dim); text-anchor: middle; }
+
+    /* ─── Right: Chat (resizable like Cursor) ─── */
+    .chat-wrap { display: flex; flex-shrink: 0; align-items: stretch; position: relative; }
+    .chat-resizer { width: 6px; cursor: col-resize; flex-shrink: 0; background: transparent; position: relative; }
+    .chat-resizer:hover { background: var(--border); }
+    .chat-resizer::after { content: ''; position: absolute; left: 2px; top: 0; bottom: 0; width: 2px; background: var(--accent); opacity: 0; border-radius: 1px; }
+    .chat-resizer:hover::after { opacity: 0.5; }
+    .chat-panel { width: var(--chat-width, 420px); min-width: 280px; max-width: min(85vw, 900px); flex-shrink: 0; display: flex; flex-direction: column; }
+    .chat-panel .chat-head { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+    .chat-panel .chat-head .title { font-family: var(--font-display); font-size: 10px; font-weight: 600; letter-spacing: 0.12em; color: var(--gold); }
+    .chat-panel .chat-head .sub { font-size: 9px; color: var(--muted); margin-top: 2px; }
+    .chat-panel .chat-messages { flex: 1; overflow-y: auto; padding: 12px 14px; min-height: 200px; font-size: 12px; line-height: 1.55; }
+    .chat-panel .chat-msg { margin-bottom: 12px; animation: thoughtEnter 0.25s ease-out; }
+    .chat-panel .chat-msg.user { color: var(--accent); }
+    .chat-panel .chat-msg.user::before { content: 'You'; font-weight: 600; margin-right: 6px; color: var(--text-dim); font-size: 9px; }
+    .chat-panel .chat-msg.assistant { color: var(--text); padding-left: 10px; border-left: 2px solid var(--accent); }
+    .chat-panel .chat-msg.assistant::before { content: 'Laura'; font-weight: 600; color: var(--accent); margin-right: 6px; font-size: 9px; }
+    .chat-panel .chat-msg.system { color: var(--muted); font-size: 10px; border-left: 2px solid var(--muted); padding-left: 10px; }
+    .chat-panel .chat-msg.system::before { content: 'System'; font-weight: 600; color: var(--muted); margin-right: 6px; font-size: 9px; }
+    .chat-panel .chat-msg.thinking { color: var(--text-dim); font-style: italic; }
+    .chat-panel .chat-msg.thinking::before { content: 'Laura'; font-weight: 600; color: var(--accent); margin-right: 6px; font-style: normal; font-size: 9px; }
+    /* Cursor-style: thinking block with timing (Thought Xs) */
+    .chat-panel .chat-msg.stream { margin-bottom: 10px; padding: 10px 12px; border-radius: 6px; border-left: 3px solid var(--accent); background: rgba(0,200,180,0.06); }
+    .chat-panel .chat-msg.stream .stream-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+    .chat-panel .chat-msg.stream .stream-label { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+    .chat-panel .chat-msg.stream .stream-time { font-family: var(--font-mono); font-size: 9px; color: var(--muted); }
+    .chat-panel .chat-msg.stream .stream-body { font-size: 12px; line-height: 1.5; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+    .chat-panel .chat-msg .msg-content { line-height: 1.55; }
+    .chat-panel .chat-msg .msg-content pre { margin: 8px 0; padding: 10px 12px; background: rgba(0,0,0,0.25); border-radius: 4px; overflow-x: auto; font-size: 11px; font-family: var(--font-mono); border-left: 2px solid var(--accent); }
+    .chat-panel .chat-msg .msg-content code { font-family: var(--font-mono); font-size: 11px; background: rgba(0,0,0,0.2); padding: 2px 5px; border-radius: 3px; }
+    .chat-panel .chat-msg .msg-content pre code { background: none; padding: 0; }
+    /* Live block: realtime Now + thinking in chat (Cursor-style) */
+    .chat-panel .chat-live-block {
+      flex-shrink: 0; padding: 10px 12px; margin: 0 2px 8px; border-radius: 6px;
+      border-left: 3px solid var(--accent); background: rgba(0,200,180,0.08);
+      font-size: 11px; line-height: 1.45; transition: box-shadow 0.2s ease;
+    }
+    .chat-panel .chat-live-block.updated { box-shadow: 0 0 12px rgba(0,200,180,0.2); }
+    .chat-panel .chat-live-block .chat-live-label { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.12em; color: var(--accent); margin-bottom: 6px; }
+    .chat-panel .chat-live-block .chat-live-reason { color: var(--text); margin-bottom: 4px; }
+    .chat-panel .chat-live-block .chat-live-action { color: var(--warn); margin-bottom: 4px; font-family: var(--font-mono); font-size: 10px; }
+    .chat-panel .chat-live-block .chat-live-thought { color: var(--text-dim); }
+    .chat-panel .chat-live-block .chat-live-empty { color: var(--muted); font-style: italic; }
+    .chat-feedback-row { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--border); background: var(--surface-elevated); font-size: 10px; color: var(--text-dim); }
+    .chat-feedback-label { font-family: var(--font-mono); letter-spacing: 0.05em; }
+    .btn-feedback { padding: 4px 10px; font-size: 14px; background: transparent; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; transition: all 0.2s; }
+    .btn-feedback:hover { border-color: var(--accent); background: var(--accent-glow); }
+    .chat-panel .chat-input-row { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--surface); }
+    .chat-panel .chat-input { flex: 1; padding: 8px 10px; font-size: 11px; background: var(--bg-panel); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); font-family: inherit; transition: border-color 0.2s, box-shadow 0.2s; }
+    .chat-panel .chat-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+    .chat-panel .chat-input::placeholder { color: var(--muted); }
+    .chat-panel .chat-send { padding: 8px 14px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; background: var(--accent); color: var(--bg); border: none; border-radius: var(--radius-sm); cursor: pointer; transition: filter 0.2s; }
+    .chat-panel .chat-send:hover { filter: brightness(1.12); }
+
+  </style>
+</head>
+<body>
+  <div id="scene-container"></div>
+  <div id="ui">
+    <header class="hud-top">
+      <div class="hud-brand">
+        <div class="logo">LAURA</div>
+        <div class="tagline">Live reasoning</div>
+      </div>
+      <div class="hud-status">
+        <span class="pulse stop" id="status-dot"></span>
+        <span id="status-text">—</span>
+      </div>
+      <div class="hud-stats-wrap" title="Paths · thoughts · neurons · synapses. Open Vitals for speed, memory, doing.">
+        <div id="stat-line" class="hud-stats">0 paths · 0 th · 0 n</div>
+      </div>
+      <div class="hud-vitals-wrap" style="position:relative">
+        <div class="hud-vitals" role="group" aria-label="Vitals">
+          <div class="living-badge" id="living-badge" title="Living status">LIVING</div>
+          <div class="vital" title="Dopamine"><span class="vital-label">D</span><div class="vital-bar" role="progressbar" id="bar-dopamine-wrap"><div class="vital-fill" id="bar-dopamine" style="width:50%;background:#3fb950"></div></div><span class="vital-num" id="val-dopamine">0.50</span></div>
+          <div class="vital" title="Cortisol"><span class="vital-label">C</span><div class="vital-bar" role="progressbar" id="bar-cortisol-wrap"><div class="vital-fill" id="bar-cortisol" style="width:20%;background:#f85149"></div></div><span class="vital-num" id="val-cortisol">0.20</span></div>
+          <div class="vital" title="Serotonin"><span class="vital-label">S</span><div class="vital-bar" role="progressbar" id="bar-serotonin-wrap"><div class="vital-fill" id="bar-serotonin" style="width:50%;background:#d29922"></div></div><span class="vital-num" id="val-serotonin">0.50</span></div>
+          <button type="button" class="btn-hud btn-vitals-toggle" id="btn-vitals-toggle" title="Show all parameters">Vitals</button>
+        </div>
+        <div id="vitals-drawer" class="vitals-drawer" aria-hidden="true">
+          <div class="vitals-title">All parameters — she is living</div>
+          <div class="vital-row"><span class="name">Dopamine</span><div class="bar-mini" id="dmini-d"><div class="fill" id="dmini-d-fill" style="width:50%;background:#3fb950"></div></div><span class="value" id="v-dopamine">0.50</span></div>
+          <div class="vital-row"><span class="name">Cortisol</span><div class="bar-mini" id="dmini-c"><div class="fill" id="dmini-c-fill" style="width:20%;background:#f85149"></div></div><span class="value" id="v-cortisol">0.20</span></div>
+          <div class="vital-row"><span class="name">Serotonin</span><div class="bar-mini" id="dmini-s"><div class="fill" id="dmini-s-fill" style="width:50%;background:#d29922"></div></div><span class="value" id="v-serotonin">0.50</span></div>
+          <div class="section"><div class="vitals-title">Emotions</div>
+          <div class="vital-row"><span class="name">Joy</span><div class="bar-mini"><div class="fill" id="emo-joy" style="width:30%;background:#3fb950"></div></div><span class="value" id="v-joy">0.30</span></div>
+          <div class="vital-row"><span class="name">Interest</span><div class="bar-mini"><div class="fill" id="emo-interest" style="width:50%;background:#d29922"></div></div><span class="value" id="v-interest">0.50</span></div>
+          <div class="vital-row"><span class="name">Frustration</span><div class="bar-mini"><div class="fill" id="emo-frustration" style="width:10%;background:#f85149"></div></div><span class="value" id="v-frustration">0.10</span></div>
+          <div class="vital-row"><span class="name">Confusion</span><div class="bar-mini"><div class="fill" id="emo-confusion" style="width:20%;background:#9e9e9e"></div></div><span class="value" id="v-confusion">0.20</span></div></div>
+          <div class="section"><div class="vitals-title">Brain</div>
+          <div class="vital-row"><span class="name">Neurons</span><span class="value" id="v-neurons">0</span></div>
+          <div class="vital-row"><span class="name">Synapses</span><span class="value" id="v-synapses">0</span></div>
+          <div class="vital-row"><span class="name">Thoughts</span><span class="value" id="v-thoughts">0</span></div>
+          <div class="vital-row"><span class="name">Episodes</span><span class="value" id="v-episodes">0</span></div></div>
+          <div class="section"><div class="vitals-title">Loop</div>
+          <div class="vital-row"><span class="name">Next tick in</span><span class="value next-tick" id="v-next-tick">—</span></div>
+          <div class="vital-row"><span class="name">Interval</span><span class="value" id="v-interval">—</span></div></div>
+          <div class="section"><div class="vitals-title">Resource</div>
+          <div class="vital-row"><span class="name">App memory</span><span class="value" id="v-app-mb">—</span></div>
+          <div class="vital-row"><span class="name">System memory</span><span class="value" id="v-sys-mem">—</span></div></div>
+          <div class="section"><div class="vitals-title">Speed &amp; latency</div>
+          <div class="vital-row"><span class="name">Doing now</span><span class="value" id="v-activity">—</span></div>
+          <div class="vital-row"><span class="name">Actions / min</span><span class="value" id="v-actions-per-min">—</span></div>
+          <div class="vital-row"><span class="name">Thoughts / min</span><span class="value" id="v-thoughts-per-min">—</span></div>
+          <div class="vital-row"><span class="name">Avg decide (ms)</span><span class="value" id="v-avg-decide-ms">—</span></div>
+          <div class="vital-row"><span class="name">Avg action (ms)</span><span class="value" id="v-avg-action-ms">—</span></div>
+          <div class="vital-row"><span class="name">Last decide (ms)</span><span class="value" id="v-last-decide-ms">—</span></div>
+          <div class="vital-row"><span class="name">Last action (ms)</span><span class="value" id="v-last-action-ms">—</span></div>
+          <div class="vital-row"><span class="name">Last tick (ms)</span><span class="value" id="v-last-tick-ms">—</span></div></div>
+        </div>
+      </div>
+      <div class="hud-actions">
+        <button type="button" class="btn-hud" id="btn-think-once" title="Run one think step">Think</button>
+        <button type="button" class="btn-hud focus-btn" id="btn-focus" title="Focus mode">Focus</button>
+        <button type="button" class="btn-hud" id="btn-continuous" title="Continuous: min 800ms between ticks">Cont.</button>
+        <button type="button" class="btn-hud" id="btn-voice" title="Voice (TTS)">Voice</button>
+        <button type="button" class="btn-hud" id="btn-pause" title="Pause / Resume">Pause</button>
+      </div>
+    </header>
+    <div id="ollama-banner" class="ollama-banner" role="status" aria-live="polite">
+      <span id="ollama-banner-text">Ollama is not running. Start it with: ollama serve</span>
+      <button type="button" class="ollama-dismiss" id="ollama-banner-dismiss">Dismiss</button>
+    </div>
+    <div class="main" id="main-layout">
+      <aside class="panel rail" id="rail">
+        <div class="panel-head"><span>Mind</span><button type="button" class="rail-toggle" id="rail-toggle" title="Collapse panel" aria-label="Collapse panel"><span class="icon">◀</span></button></div>
+        <div class="panel-body">
+          <div class="mind-section">
+            <div class="now-block" id="now-block">
+              <div class="now-label">Current thought</div>
+              <div class="now-text" id="current-thought">—</div>
+              <div class="now-reason" id="current-reason" aria-live="polite" title="Reasoning for this action"></div>
+              <span class="now-tag" id="action-tag"></span>
+            </div>
+          </div>
+          <div class="goals-block mind-section">
+            <div class="goals-head">
+              <span class="mind-section-title">Goals</span>
+              <span class="goals-count" id="goals-count" aria-live="polite">0 active</span>
+            </div>
+            <div id="goals-list"></div>
+            <div class="goals-add">
+              <input type="text" id="goal-input" placeholder="Add a goal…" maxlength="200" />
+              <button type="button" id="goal-add-btn">Add</button>
+            </div>
+          </div>
+          <div class="tabs">
+            <button type="button" class="tab active" data-tab="thoughts">Thoughts</button>
+            <button type="button" class="tab" data-tab="self-talk">Self</button>
+            <button type="button" class="tab" data-tab="inner">Inner</button>
+            <button type="button" class="tab" data-tab="activity">Activity</button>
+          </div>
+          <div id="tab-thoughts" class="tab-content active">
+            <div class="mind-section-title">Recent thoughts (action + reasoning)</div>
+            <div id="thoughts-list"></div>
+            <div id="thoughts-empty" class="empty-state" style="display:none;"><strong>No thoughts yet</strong>Thoughts appear here as Laura thinks. Each shows time, action type, and the thought.</div>
+          </div>
+          <div id="tab-self-talk" class="tab-content">
+            <p class="tab-self-header">Laura talks to herself, then acts on the conclusion. Transcript and outcome below.</p>
+            <div id="self-conversation-conclusion" class="self-conclusion" aria-live="polite"></div>
+            <div id="self-conversation-list"></div>
+            <div id="self-talk-empty" class="empty-state" style="display:none;"><strong>No self-talk yet</strong>When she has a full dialogue with herself, the conclusion and messages appear here.</div>
+          </div>
+          <div id="tab-inner" class="tab-content">
+            <div class="mind-section-title">Inner voice (reasoning stream)</div>
+            <div id="inner-thoughts-list"></div>
+            <div id="inner-empty" class="empty-state" style="display:none;"><strong>No inner thoughts yet</strong>Her raw reasoning stream appears here.</div>
+          </div>
+          <div id="tab-activity" class="tab-content">
+            <div class="mind-section-title">Activity log (actions &amp; I/O)</div>
+            <div id="logs-list"></div>
+            <div id="logs-empty" class="empty-state" style="display:none;"><strong>No activity yet</strong>File reads, URLs, commands show here with type and target.</div>
+          </div>
+        </div>
+      </aside>
+      <div class="center-space">
+        <button type="button" class="rail-toggle-restore" id="rail-toggle-restore" title="Show Mind panel" aria-label="Show Mind panel">Mind ▶</button>
+        <div class="watermark" aria-hidden="true">LAURA</div>
+        <div id="neural-graph" aria-hidden="true"></div>
+      </div>
+      <div class="chat-wrap">
+        <div class="chat-resizer" id="chat-resizer" title="Drag to resize chat" aria-label="Resize chat panel"></div>
+        <section class="panel chat-panel">
+          <div class="chat-head">
+            <div class="title">Chat with Laura</div>
+            <div class="sub">Live block below shows what she’s doing right now. Type to chat; you see her thinking then her reply—like Cursor.</div>
+          </div>
+          <div class="chat-messages" id="chat-messages"></div>
+          <div id="chat-live-block" class="chat-live-block" aria-live="polite" title="What she is doing right now—updates in real time">
+            <div class="chat-live-label">Live</div>
+            <div class="chat-live-reason" id="chat-live-reason"></div>
+            <div class="chat-live-action" id="chat-live-action"></div>
+            <div class="chat-live-thought" id="chat-live-thought">—</div>
+          </div>
+          <div class="chat-feedback-row">
+            <span class="chat-feedback-label">Feedback (HITL):</span>
+            <button type="button" class="btn-feedback" id="feedback-up" title="Positive — she did well">👍</button>
+            <button type="button" class="btn-feedback" id="feedback-down" title="Negative — adjust behavior">👎</button>
+          </div>
+          <div class="chat-input-row">
+            <input type="text" class="chat-input" id="chat-input" placeholder="Plan, @ for context, / for commands" maxlength="2000" title="Type a message. /goal &lt;text&gt; to add a goal, /think to run one step" />
+            <button type="button" class="chat-send" id="chat-send">Send</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="alert" aria-live="assertive"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="scene.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

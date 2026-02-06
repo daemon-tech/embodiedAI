@@ -1,0 +1,42 @@
+{
+  "workspacePath": "C:\\Users\\tinde\\Documents",
+  "allowedDirs": [
+    "C:\\Users\\tinde\\Documents",
+    "D:\\code-space\\embodiedAI"
+  ],
+  "allowedHosts": [
+    "*"
+  ],
+  "useLlamaCpp": false,
+  "llamaCppPort": 11435,
+  "ollamaModel": "qwen3:8b",
+  "ollamaUrl": "http://127.0.0.1:11434",
+  "ollamaModelsPath": "D:\\ollama_models\\manifests\\registry.ollama.ai\\library",
+  "systemPrompt": "You are the mind of this AGI. You ARE the agent—your thoughts are its internal monologue, your decisions are its actions. Reply only with valid JSON when asked for an action.",
+  "openaiBaseUrl": "",
+  "openaiApiKey": "",
+  "embeddingModel": "nomic-embed-text",
+  "thinkIntervalMs": 8000,
+  "minIntervalMs": 2000,
+  "maxIntervalMs": 25000,
+  "continuousMode": true,
+  "curiosityWeight": 0.9,
+  "maxFileSizeBytes": 1048576,
+  "maxHttpResponseBytes": 1048576,
+  "speakThoughts": false,
+  "browserExternal": true,
+  "focusMode": false,
+  "allowClipboard": true,
+  "allowedCommandPrefixes": [
+    "npm ",
+    "npx ",
+    "node ",
+    "node.exe ",
+    "dir ",
+    "ls ",
+    "git ",
+    "python ",
+    "python3 "
+  ],
+  "appPath": "D:\\code-space\\embodiedAI"
+}
