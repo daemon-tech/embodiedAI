@@ -1,0 +1,22 @@
+# Project rules (Cursor-style)
+
+Laura and any AI working in this repo should follow these. Same idea as Cursor: one place for project conventions and file truths.
+
+## Extension / identity file
+
+- There is **no** file named `extension.js` in this project.
+- When a goal or user says "extension.js", they mean **mind/agent_extensions.js**.
+- Always use path **mind/agent_extensions.js** for read_file or edit_code of the extension/identity file.
+- Core (loop, memory, thinking, main, allow, safety_principles) is read-only; only mind/agent_extensions.js and files in allowed dirs are editable.
+
+## Paths and structure
+
+- Project root is the first allowed dir (or app path). Use it for list_dir and relative paths.
+- mind/ contains the agent core: loop, memory, thinking, action, perception, allow, agent_extensions.js, etc.
+- src/renderer/ is the UI (index.html, renderer.js, scene.js).
+
+## Behavior
+
+- Prefer read_file before edit_code; use exact oldText for edits.
+- Give a short "reason" for every action (user sees it live).
+- If a path fails with ENOENT, check project rules and use the correct path (e.g. agent_extensions.js → mind/agent_extensions.js).

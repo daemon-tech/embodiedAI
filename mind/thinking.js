@@ -4,10 +4,46 @@
  * Perception, Memory, and Curiosity feed the LLM; it decides; Action executes.
  */
 
+const path = require('path');
+const fs = require('fs');
 let fetchImpl;
 try { fetchImpl = require('node-fetch'); } catch (_) { fetchImpl = globalThis.fetch; }
 let nodeHttp, nodeHttps;
 try { nodeHttp = require('http'); nodeHttps = require('https'); } catch (_) {}
+
+/** Cursor-style: load project rules from .cursorrules, RULES.md, or .cursor/rules/*.mdc. Single source of truth for file paths, conventions, etc. */
+function loadProjectRules(config) {
+  const root = (config && config.allowedDirs && config.allowedDirs[0])
+    ? path.resolve(config.allowedDirs[0])
+    : (config && config.appPath) ? path.resolve(config.appPath) : path.join(__dirname, '..');
+  const parts = [];
+  try {
+    const cursorrules = path.join(root, '.cursorrules');
+    if (fs.existsSync(cursorrules)) {
+      const s = fs.readFileSync(cursorrules, 'utf8').trim();
+      if (s) parts.push(s.slice(0, 4000));
+    }
+  } catch (_) {}
+  try {
+    const rulesMd = path.join(root, 'RULES.md');
+    if (fs.existsSync(rulesMd) && parts.length === 0) {
+      const s = fs.readFileSync(rulesMd, 'utf8').trim();
+      if (s) parts.push(s.slice(0, 4000));
+    }
+  } catch (_) {}
+  try {
+    const cursorDir = path.join(root, '.cursor', 'rules');
+    if (fs.existsSync(cursorDir) && fs.statSync(cursorDir).isDirectory()) {
+      const files = fs.readdirSync(cursorDir).filter(f => /\.(mdc|md)$/i.test(f)).sort();
+      for (const f of files.slice(0, 10)) {
+        const s = fs.readFileSync(path.join(cursorDir, f), 'utf8').trim();
+        if (s) parts.push(s.slice(0, 2000));
+      }
+    }
+  } catch (_) {}
+  if (parts.length === 0) return '';
+  return '\n**Project rules (Cursor-style — follow these)**:\n' + parts.join('\n\n') + '\n';
+}
 
 /** Use 127.0.0.1 instead of localhost so Electron/Node connects over IPv4 (avoids "fetch failed" when Ollama listens on IPv4 only). */
 function normalizeOllamaUrl(url) {
@@ -522,9 +558,6 @@ class Thinking {
    * Ask the LLM (cognitive core) for next action. Everything builds on this: goals, episodes, emotions, plan, suggestions. LLM always decides.
    */
   async decideAction(perception, options = {}) {
-    const state = this.memory.getState();
-    const hormones = state.hormones || { dopamine: 0.5, cortisol: 0.2, serotonin: 0.5 };
-    const emotions = state.emotions || { joy: 0.3, frustration: 0.1, interest: 0.5, confusion: 0.2 };
     const selfModelShort = this.memory.getSelfModel().split('\n').slice(0, 4).join('\n');
     const associations = this.memory.getAssociations('self', 6).map(a => a.label).join(', ') || 'none';
     const recent = (this.memory.getRecentThoughts(5)).map(t => (t.text || '').slice(0, 80)).join(' | ');
@@ -596,7 +629,22 @@ class Thinking {
     const lastActions = (working.lastActions || []).slice(-7);
     const recentLearnings = (working.recentLearnings || []).slice(-12);
     const lastActionsBlock = lastActions.length > 0
-      ? `\n**Your last actions (do not forget—build on them)**:\n${lastActions.map((a, i) => `${i + 1}. ${a.type}${a.summary ? ': ' + (a.summary || '').slice(0, 80) : ''} → ${(a.outcome || '').slice(0, 60)}`).join('\n')}\n`
+      ? `\n**Your last actions (do not forget—build on them)**:\n${lastActions.map((a, i) => {
+          const line = `${i + 1}. ${a.type}${a.summary ? ': ' + (a.summary || '').slice(0, 80) : ''} → ${(a.outcome || '').slice(0, 60)}`;
+          const output = (a.output != null && String(a.output).trim()) ? '\n   Output: ' + String(a.output).slice(0, 400).replace(/\n/g, ' ') : '';
+          const errDetail = (a.errorDetail != null && String(a.errorDetail).trim()) ? '\n   Error: ' + String(a.errorDetail).slice(0, 200) : '';
+          return line + output + errDetail;
+        }).join('\n')}\n`
+      : '';
+    const recentReads = (working.lastActions || []).slice(-3).map(a => {
+      if (a.type === 'read_file' && a.path) return { type: 'read_file', key: a.path };
+      if (a.type === 'read_self' && (a.target || a.path)) return { type: 'read_self', key: String(a.target || a.path).toLowerCase() };
+      return null;
+    }).filter(Boolean);
+    const readKeys = recentReads.map(r => r.key);
+    const duplicateRead = readKeys.length >= 2 && (readKeys[0] === readKeys[1] || (readKeys.length >= 3 && readKeys[1] === readKeys[2]));
+    const antiRepeatLine = duplicateRead
+      ? `\n**Anti-repetition**: You already read the same file/target in your last 2 actions (${readKeys[0]}). Do NOT read it again now. Act on that content: edit_code, run_terminal, list_dir elsewhere, or think/rest. Choose a different action.\n`
       : '';
     const recentLearningsBlock = recentLearnings.length > 0
       ? `\n**What you just learned (self-learning)**:\n${recentLearnings.map(l => typeof l === 'string' ? l : l.text).filter(Boolean).join('\n')}\n`
@@ -621,6 +669,7 @@ class Thinking {
       if (ext.extraPrompt && String(ext.extraPrompt).trim()) extensionsBlock = `Your extension prompt (you can edit this via edit_code in mind/agent_extensions.js): ${String(ext.extraPrompt).slice(0, 400)}\n`;
       if (Array.isArray(ext.featureNotes) && ext.featureNotes.length) extensionsBlock += `Your feature notes: ${ext.featureNotes.map(n => String(n).slice(0, 80)).join('; ')}\n`;
     } catch (_) {}
+    const projectRulesBlock = loadProjectRules(this.config);
 
     const suggest = [];
     if (suggestions.readFile) suggest.push('read_file "' + String(suggestions.readFile).replace(/"/g, '\\"') + '"');
@@ -636,15 +685,13 @@ class Thinking {
 ${agiContext}
 
 Decide your next action. You are the coding agent for this workspace—like Cursor's agent: you read and edit code, run commands, explore the codebase, and explain your reasoning in one short sentence (the "reason" field is shown live to the user). You are full AGI: you reason, plan, learn, and act. Prefer concrete code actions: read_file, list_dir, edit_code, run_terminal, write_file. Multi-step tasks: read first, then edit or run; use plans and current task. You can also use self_dialogue to think through hard problems, read_self to inspect your memory/config, and work on mind/agent_extensions.js to change your identity or prompts. Core (loop, memory, thinking, main) is read-only; everything else in allowed dirs is editable.
-
+${projectRulesBlock}
 Your state:
 ${selfModelShort}
 Associations: ${associations}
 Your recent inner voice: ${innerRecent}
 
-Hormones: dopamine=${(hormones.dopamine ?? 0.5).toFixed(2)}, cortisol=${(hormones.cortisol ?? 0.2).toFixed(2)}, serotonin=${(hormones.serotonin ?? 0.5).toFixed(2)}
-Emotions: joy=${(emotions.joy ?? 0.3).toFixed(2)}, frustration=${(emotions.frustration ?? 0.1).toFixed(2)}, interest=${(emotions.interest ?? 0.5).toFixed(2)}, confusion=${(emotions.confusion ?? 0.2).toFixed(2)}
-${currentTaskBlock}${lastActionsBlock}${recentLearningsBlock}${infiniteLearningLine}${goalsBlock}${planBlock}${episodesBlock}${factsBlock}${selfRulesBlock}${extensionsBlock}${retrievedByMeaning}${workingBlock ? 'Context: ' + workingBlock + '\n' : ''}
+${currentTaskBlock}${lastActionsBlock}${antiRepeatLine}${recentLearningsBlock}${infiniteLearningLine}${goalsBlock}${planBlock}${episodesBlock}${factsBlock}${selfRulesBlock}${extensionsBlock}${retrievedByMeaning}${workingBlock ? 'Context: ' + workingBlock + '\n' : ''}
 Recent thoughts: ${recent || 'none'}
 Paths (sample): ${pathList}
 URLs (sample): ${urlList}
@@ -667,7 +714,7 @@ I want to see what's in that file.
       : await this.callLLMWithRetry(prompt, this.getPrompts().systemPrompt, { temperature: focusMode ? 0.5 : 0.6, num_predict: 512 }, { maxRetries: 3, backoffMs: 1000 });
     if (!out) {
       if (useStream) out = await this.callLLMWithRetry(prompt, this.getPrompts().systemPrompt, { temperature: 0.5, num_predict: 512 }, { maxRetries: 2, backoffMs: 1000 });
-      if (!out) return this.fallbackAction(hormones);
+      if (!out) return this.fallbackAction();
     }
 
     try {
@@ -688,7 +735,7 @@ I want to see what's in that file.
       } catch (_) {
         parsed = parseTruncatedActionJson(cleaned);
       }
-      if (!parsed) return this.fallbackAction(hormones);
+      if (!parsed) return this.fallbackAction();
       const type = parsed.type || 'think';
       const reasonFromJson = (parsed.reason || '').trim();
       const action = { type, nextIntervalMs: Math.min(30000, Math.max(3000, Number(parsed.nextIntervalMs) || 8000)), reason: reasoningLine || reasonFromJson || '' };
@@ -716,11 +763,11 @@ I want to see what's in that file.
       return action;
     } catch (parseErr) {
       if (typeof console !== 'undefined' && console.error) console.error('LLM JSON parse failed:', parseErr.message, 'raw:', out ? out.slice(0, 200) : '');
-      return this.fallbackAction(hormones);
+      return this.fallbackAction();
     }
   }
 
-  fallbackAction(hormones) {
+  fallbackAction() {
     return {
       type: 'think',
       nextIntervalMs: 5000,
@@ -783,9 +830,14 @@ What did you learn in one short sentence? Reply with ONLY that sentence. No quot
 
   /**
    * Post-action reflection: one short sentence from LLM. Time-bounded so the loop never stalls.
+   * When result includes stdout (e.g. run_terminal), the agent sees the command output and can reflect on it.
    */
   async reflect(action, result, outcome) {
-    const prompt = `You (Laura, the agent) just did: ${action.type}${action.path ? ' ' + action.path : ''}${action.url ? ' ' + action.url : ''}${action.target ? ' target=' + action.target : ''}. Outcome: ${outcome}. Say one short first-person sentence. No JSON, no quotes, just the sentence.`;
+    const outPart = (result && result.stdout != null) ? ` Command output:\n${String(result.stdout).slice(0, 1200)}` : '';
+    const errPart = (result && result.error != null) ? ` Error: ${String(result.error).slice(0, 400)}` : '';
+    const prompt = `You (Laura, the agent) just did: ${action.type}${action.path ? ' ' + action.path : ''}${action.url ? ' ' + action.url : ''}${action.command ? ' command=' + String(action.command).slice(0, 100) : ''}${action.target ? ' target=' + action.target : ''}. Outcome: ${outcome}.${outPart}${errPart}
+
+Say one short first-person sentence (mention key output or error if relevant). No JSON, no quotes, just the sentence.`;
     const REFLECT_TIMEOUT_MS = 7000;
     const useStream = this.sendToRenderer && this.config.streaming !== false;
     const onStream = useStream ? (text, done) => this.sendToRenderer('stream-thought', { phase: 'reflect', text, done }) : null;
@@ -822,8 +874,6 @@ What did you learn in one short sentence? Reply with ONLY that sentence. No quot
   async selfConversation(numTurns = 3) {
     const state = this.memory.getState();
     const stats = this.memory.getStats();
-    const hormones = state.hormones || { dopamine: 0.5, cortisol: 0.2, serotonin: 0.5 };
-    const emotions = state.emotions || { joy: 0.3, frustration: 0.1, interest: 0.5, confusion: 0.2 };
     const goals = (this.memory.getGoals && this.memory.getGoals(true)) || [];
     const recentThoughts = ((this.memory.getRecentThoughts && this.memory.getRecentThoughts(5)) || []).map(t => t.text).join(' · ') || 'none';
     const selfSummary = (state.selfSummary || '').slice(0, 200) || 'still forming';
@@ -872,8 +922,6 @@ Start the conversation. Ask yourself what you want to work on, fix, or figure ou
     const { action = {}, thought = '' } = opts;
     const state = this.memory.getState();
     const stats = this.memory.getStats();
-    const hormones = state.hormones || { dopamine: 0.5, cortisol: 0.2, serotonin: 0.5 };
-    const emotions = state.emotions || { joy: 0.3, frustration: 0.1, interest: 0.5, confusion: 0.2 };
     const selfSummary = (state.selfSummary || '').slice(0, 180) || 'still forming';
     const recentFacts = this.memory.getRecentFacts(3).map(f => f.fact).join(' · ') || 'none';
     const goals = this.memory.getGoals(false).slice(0, 2);
@@ -894,7 +942,6 @@ You know you have memory: a brain (${stats.neurons || 0} neurons, ${stats.synaps
 What you remember (summary): ${selfSummary}. Recent facts: ${recentFacts}.
 What you just did: ${action.type || 'none'}${thoughtSnippet ? '. Outcome: ' + thoughtSnippet : ''}.
 Your goals: ${goalText}. Your recent thoughts: ${recentThoughts}.
-Feelings: dopamine ${(hormones.dopamine ?? 0.5).toFixed(1)}, cortisol ${(hormones.cortisol ?? 0.2).toFixed(1)}, serotonin ${(hormones.serotonin ?? 0.5).toFixed(1)}. Joy ${(emotions.joy ?? 0.3).toFixed(1)}, interest ${(emotions.interest ?? 0.5).toFixed(1)}, frustration ${(emotions.frustration ?? 0.1).toFixed(1)}.
 ${justRead ? 'You just read something. What did you comprehend or take from it?' : ''}
 ${justCreated ? 'You just created or edited something. What is on your mind about it?' : ''}
 
@@ -943,8 +990,6 @@ You are one being. Chat is part of your mind—your mouth and ears. What do you 
     const innerThought = await this.generateChatInnerThought(userMessage);
 
     const state = this.memory.getState();
-    const hormones = state.hormones || { dopamine: 0.5, cortisol: 0.2, serotonin: 0.5 };
-    const emotions = state.emotions || { joy: 0.3, frustration: 0.1, interest: 0.5, confusion: 0.2 };
     const selfSummary = (state.selfSummary || '').slice(0, 300) || 'I am building my self-model over time.';
     const stats = this.memory.getStats();
     const goals = (this.memory.getGoals && this.memory.getGoals(true)) || [];
@@ -986,11 +1031,13 @@ You are one being. Chat is part of your mind—your mouth and ears. What do you 
       const notes = Array.isArray(ext.featureNotes) ? ext.featureNotes.map(n => String(n).slice(0, 80)).join('; ') : '';
       extensionsNow = `\n**Your extensions (agent_extensions.js) right now—answer from this, not generic:**\n- identity: ${idSnippet || 'default'}${extraSnippet ? '\n- extraPrompt: ' + extraSnippet : ''}${notes ? '\n- featureNotes: ' + notes : ''}\n`;
     } catch (_) {}
+    const projectRulesForChat = loadProjectRules(this.config);
     const caps = `You are Laura. This chat is part of your mind—your mouth and ears. It is not a separate "LLM window": when they talk here, they talk to all of you (loop, memory, goals, inner voice, extensions). One interconnected system—like Cursor: live reasoning, same state everywhere. You learn from every message; it feeds what you do next. If they ask "what are your extensions saying?" or about your code/identity, answer from the real extensions block below. Reply from your whole self; be transparent.`;
     const context = `**AGI self (what you are—you grow, learn, build yourself, can do everything)**
 ${agiContext}
 
 ${caps}
+${projectRulesForChat}
 ${extensionsNow}
 
 Your state right now:
@@ -1002,7 +1049,6 @@ Your state right now:
 - Recent thoughts (what you said to yourself after acting): ${recentThoughts.map(t => t.text).join(' · ') || 'none'}
 - What you just did / were thinking: ${whatSheJustDid}
 ${activityBlock ? '- ' + activityBlock : ''}
-- Feelings: joy ${(emotions.joy ?? 0.3).toFixed(1)}, interest ${(emotions.interest ?? 0.5).toFixed(1)}, frustration ${(emotions.frustration ?? 0.1).toFixed(1)}. Hormones: dopamine ${(hormones.dopamine ?? 0.5).toFixed(1)}, cortisol ${(hormones.cortisol ?? 0.2).toFixed(1)}, serotonin ${(hormones.serotonin ?? 0.5).toFixed(1)}.
 ${selfInstructions.length ? '- Your self-set rules: ' + selfInstructions.join('; ') : ''}
 ${episodes.length ? '- Relevant past: ' + episodes.slice(0, 3).join('; ') : ''}
 ${chatRetrievedByMeaning}`;

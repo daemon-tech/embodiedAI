@@ -4,7 +4,6 @@
  */
 (function() {
   let scene, camera, renderer, orb, orbGlow, ring, gridHelper, neuralGroup, clock;
-  let hormones = { dopamine: 0.5, cortisol: 0.2, serotonin: 0.5 };
   let mode = 'idle';
   let modeUntil = 0;
   let animId = null;
@@ -176,8 +175,7 @@
       const pulseScale = 1 + Math.sin(t * 4) * m.pulse;
       orb.scale.setScalar(m.scale * pulseScale);
       if (orb.material) {
-        const d = hormones.dopamine ?? 0.5, c = hormones.cortisol ?? 0.2, s = hormones.serotonin ?? 0.5;
-        const r = Math.min(1, m.color[0] + c * 0.25), g = Math.min(1, m.color[1] + d * 0.2), b = Math.min(1, m.color[2] + s * 0.15);
+        const [r, g, b] = m.color;
         orb.material.emissive.setRGB(r * m.emissive, g * m.emissive, b * m.emissive);
         orb.material.color.setRGB(r, g, b);
       }
@@ -224,14 +222,8 @@
     animId = requestAnimationFrame(animate);
   }
 
-  function update(h) {
-    if (!h) return;
-    hormones = { ...hormones, ...h };
-    if (!orbGlow || !orbGlow.material) return;
-    const d = hormones.dopamine ?? 0.5, c = hormones.cortisol ?? 0.2, s = hormones.serotonin ?? 0.5;
-    const m = MODES[getMode()] || MODES.idle;
-    const r = Math.min(1, m.color[0] + c * 0.25), g = Math.min(1, m.color[1] + d * 0.2), b = Math.min(1, m.color[2] + s * 0.15);
-    orbGlow.material.color.setRGB(r, g, b);
+  function update() {
+    /* no-op: hormones removed for max speed; orb uses mode color only */
   }
 
   function cleanup() {

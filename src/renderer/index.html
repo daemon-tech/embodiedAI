@@ -195,6 +195,22 @@
     .inner-item .inner-time { font-family: var(--font-mono); font-size: 9px; color: var(--muted); margin-bottom: 4px; }
     .inner-item .inner-text { font-size: 11px; line-height: 1.5; color: var(--text); }
     .inner-item.inner-item-new { animation: thoughtEnter 0.3s ease-out forwards; }
+    .steps-list { max-height: 360px; overflow-y: auto; }
+    .step-item { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 11px; display: flex; flex-direction: column; gap: 4px; transition: background 0.2s; }
+    .step-item:hover { background: rgba(255,0,64,0.06); }
+    .step-item .step-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .step-item .step-time { font-family: var(--font-mono); font-size: 9px; color: var(--muted); }
+    .step-item .step-action { font-family: var(--font-mono); font-size: 8px; padding: 2px 6px; border-radius: 3px; background: rgba(255,0,64,0.2); color: var(--accent); }
+    .step-item .step-detail { color: var(--text-dim); word-break: break-all; }
+    .step-item .step-thought { color: var(--text); line-height: 1.4; margin-top: 2px; }
+    .terminal-log { max-height: 420px; overflow-y: auto; font-family: var(--font-mono); font-size: 11px; background: #0d1117; color: #c9d1d9; border-radius: var(--radius-sm); padding: 10px; border: 1px solid var(--border); }
+    .terminal-log:empty { min-height: 80px; }
+    .terminal-entry { margin-bottom: 12px; padding: 8px 10px; border-radius: 4px; background: rgba(0,0,0,0.3); border-left: 3px solid var(--accent); }
+    .terminal-entry.terminal-error { border-left-color: #f85149; }
+    .terminal-entry .term-time { font-size: 9px; color: var(--muted); margin-bottom: 4px; }
+    .terminal-entry .term-cmd { color: #58a6ff; margin-bottom: 6px; word-break: break-all; }
+    .terminal-entry .term-out { white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; color: #8b949e; font-size: 10px; }
+    .terminal-entry .term-err { color: #f85149; white-space: pre-wrap; word-break: break-word; font-size: 10px; }
     .empty-state { padding: 20px 14px; font-size: 11px; color: var(--muted); line-height: 1.5; text-align: center; }
     .empty-state strong { display: block; margin-bottom: 6px; font-size: 10px; letter-spacing: 0.08em; color: var(--text-dim); }
     .goals-block { padding: 12px 14px; border-bottom: 1px solid var(--border); }
@@ -272,6 +288,8 @@
     .chat-feedback-label { font-family: var(--font-mono); letter-spacing: 0.05em; }
     .btn-feedback { padding: 4px 10px; font-size: 14px; background: transparent; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; transition: all 0.2s; }
     .btn-feedback:hover { border-color: var(--accent); background: var(--accent-glow); }
+    .copy-for-cursor-btn { margin-left: auto; padding: 4px 10px; font-size: 10px; font-family: var(--font-mono); background: transparent; border: 1px solid var(--border); color: var(--text-dim); border-radius: var(--radius-sm); cursor: pointer; }
+    .copy-for-cursor-btn:hover { border-color: var(--accent); color: var(--accent); }
     .chat-panel .chat-input-row { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--surface); }
     .chat-panel .chat-input { flex: 1; padding: 8px 10px; font-size: 11px; background: var(--bg-panel); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); font-family: inherit; transition: border-color 0.2s, box-shadow 0.2s; }
     .chat-panel .chat-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
@@ -298,23 +316,11 @@
         <div id="stat-line" class="hud-stats">0 paths · 0 th · 0 n</div>
       </div>
       <div class="hud-vitals-wrap" style="position:relative">
-        <div class="hud-vitals" role="group" aria-label="Vitals">
-          <div class="living-badge" id="living-badge" title="Living status">LIVING</div>
-          <div class="vital" title="Dopamine"><span class="vital-label">D</span><div class="vital-bar" role="progressbar" id="bar-dopamine-wrap"><div class="vital-fill" id="bar-dopamine" style="width:50%;background:#00ff88"></div></div><span class="vital-num" id="val-dopamine">0.50</span></div>
-          <div class="vital" title="Cortisol"><span class="vital-label">C</span><div class="vital-bar" role="progressbar" id="bar-cortisol-wrap"><div class="vital-fill" id="bar-cortisol" style="width:20%;background:#ff3355"></div></div><span class="vital-num" id="val-cortisol">0.20</span></div>
-          <div class="vital" title="Serotonin"><span class="vital-label">S</span><div class="vital-bar" role="progressbar" id="bar-serotonin-wrap"><div class="vital-fill" id="bar-serotonin" style="width:50%;background:#ffaa00"></div></div><span class="vital-num" id="val-serotonin">0.50</span></div>
-          <button type="button" class="btn-hud btn-vitals-toggle" id="btn-vitals-toggle" title="Show all parameters">Vitals</button>
+        <div class="hud-vitals" role="group" aria-label="Status">
+          <div class="living-badge" id="living-badge" title="Loop status">LIVING</div>
+          <button type="button" class="btn-hud btn-vitals-toggle" id="btn-vitals-toggle" title="Stats &amp; speed">Stats</button>
         </div>
         <div id="vitals-drawer" class="vitals-drawer" aria-hidden="true">
-          <div class="vitals-title">All parameters — she is living</div>
-          <div class="vital-row"><span class="name">Dopamine</span><div class="bar-mini" id="dmini-d"><div class="fill" id="dmini-d-fill" style="width:50%;background:#00ff88"></div></div><span class="value" id="v-dopamine">0.50</span></div>
-          <div class="vital-row"><span class="name">Cortisol</span><div class="bar-mini" id="dmini-c"><div class="fill" id="dmini-c-fill" style="width:20%;background:#ff3355"></div></div><span class="value" id="v-cortisol">0.20</span></div>
-          <div class="vital-row"><span class="name">Serotonin</span><div class="bar-mini" id="dmini-s"><div class="fill" id="dmini-s-fill" style="width:50%;background:#ffaa00"></div></div><span class="value" id="v-serotonin">0.50</span></div>
-          <div class="section"><div class="vitals-title">Emotions</div>
-          <div class="vital-row"><span class="name">Joy</span><div class="bar-mini"><div class="fill" id="emo-joy" style="width:30%;background:#00ff88"></div></div><span class="value" id="v-joy">0.30</span></div>
-          <div class="vital-row"><span class="name">Interest</span><div class="bar-mini"><div class="fill" id="emo-interest" style="width:50%;background:#ffaa00"></div></div><span class="value" id="v-interest">0.50</span></div>
-          <div class="vital-row"><span class="name">Frustration</span><div class="bar-mini"><div class="fill" id="emo-frustration" style="width:10%;background:#ff3355"></div></div><span class="value" id="v-frustration">0.10</span></div>
-          <div class="vital-row"><span class="name">Confusion</span><div class="bar-mini"><div class="fill" id="emo-confusion" style="width:20%;background:#9e9e9e"></div></div><span class="value" id="v-confusion">0.20</span></div></div>
           <div class="section"><div class="vitals-title">Brain</div>
           <div class="vital-row"><span class="name">Neurons</span><span class="value" id="v-neurons">0</span></div>
           <div class="vital-row"><span class="name">Synapses</span><span class="value" id="v-synapses">0</span></div>
@@ -374,14 +380,21 @@
           </div>
           <div class="tabs">
             <button type="button" class="tab active" data-tab="thoughts">Thoughts</button>
+            <button type="button" class="tab" data-tab="steps">Steps</button>
             <button type="button" class="tab" data-tab="self-talk">Self</button>
             <button type="button" class="tab" data-tab="inner">Inner</button>
             <button type="button" class="tab" data-tab="activity">Activity</button>
+            <button type="button" class="tab" data-tab="terminal">Terminal</button>
           </div>
           <div id="tab-thoughts" class="tab-content active">
             <div class="mind-section-title">Recent thoughts (action + reasoning)</div>
             <div id="thoughts-list"></div>
             <div id="thoughts-empty" class="empty-state" style="display:none;"><strong>No thoughts yet</strong>Thoughts appear here as Laura thinks. Each shows time, action type, and the thought.</div>
+          </div>
+          <div id="tab-steps" class="tab-content">
+            <div class="mind-section-title">Live steps (every action in order)</div>
+            <div id="steps-list" class="steps-list" aria-live="polite"></div>
+            <div id="steps-empty" class="empty-state" style="display:none;"><strong>No steps yet</strong>Each decide → execute → reflect appears here so you can see if she’s looping.</div>
           </div>
           <div id="tab-self-talk" class="tab-content">
             <p class="tab-self-header">Laura talks to herself, then acts on the conclusion. Transcript and outcome below.</p>
@@ -398,6 +411,11 @@
             <div class="mind-section-title">Activity log (actions &amp; I/O)</div>
             <div id="logs-list"></div>
             <div id="logs-empty" class="empty-state" style="display:none;"><strong>No activity yet</strong>File reads, URLs, commands show here with type and target.</div>
+          </div>
+          <div id="tab-terminal" class="tab-content">
+            <div class="mind-section-title">Laura’s terminal (live)</div>
+            <div id="terminal-log" class="terminal-log" aria-live="polite"></div>
+            <div id="terminal-empty" class="empty-state" style="display:none;"><strong>No terminal output yet</strong>Commands she runs and their stdout/stderr appear here.</div>
           </div>
         </div>
       </aside>
@@ -426,6 +444,7 @@
             <span class="chat-feedback-label">Feedback (HITL):</span>
             <button type="button" class="btn-feedback" id="feedback-up" title="Positive — she did well">👍</button>
             <button type="button" class="btn-feedback" id="feedback-down" title="Negative — adjust behavior">👎</button>
+            <button type="button" class="copy-for-cursor-btn" id="copy-for-cursor" title="Copy Laura's state so you can paste it in Cursor for the AI to fix or debug">Copy for Cursor</button>
           </div>
           <div class="chat-input-row">
             <input type="text" class="chat-input" id="chat-input" placeholder="Plan, @ for context, / for commands" maxlength="2000" title="Type a message. /goal &lt;text&gt; to add a goal, /think to run one step" />

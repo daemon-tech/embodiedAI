@@ -21,13 +21,9 @@ const STRENGTHEN_ON_USE = 0.04;
 const STRENGTHEN_CONNECTION = 0.06;
 const WEAKEN_ON_FAILURE = 0.03;
 const STRENGTHEN_ON_SUCCESS = 0.05;
-const EMOTION_DECAY = 0.98;
 
 const SELF_ID = 'self';
 const STOPWORDS = new Set(['i', 'me', 'my', 'a', 'an', 'the', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'shall', 'can', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'that', 'this', 'it', 'its', 'as', 'so', 'if', 'than', 'just', 'about', 'into', 'out', 'up', 'down', 'no', 'not']);
-
-const DEFAULT_HORMONES = { dopamine: 0.5, cortisol: 0.2, serotonin: 0.5 };
-const DEFAULT_EMOTIONS = { joy: 0.3, frustration: 0.1, interest: 0.5, confusion: 0.2 };
 
 function slug(label) {
   return String(label).toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '').slice(0, 64) || 'concept';
@@ -53,7 +49,6 @@ class Memory {
     this.brainFilePath = brainFilePath || null;
     this.archiveFilePath = archiveFilePath || path.join(path.dirname(filePath), 'archive.json.gz');
     this.auditLogPath = auditLogPath || path.join(path.dirname(filePath), 'audit_log.json');
-    this._cortisolHighTicks = 0;
     this.data = {
       exploredPaths: {},
       exploredUrls: {},
@@ -77,8 +72,6 @@ class Memory {
         selfSummary: '',
         agiSelfModel: '',
         capabilityRegister: {},
-        hormones: { ...DEFAULT_HORMONES },
-        emotions: { ...DEFAULT_EMOTIONS },
         goals: [],
         plan: null,
         lastUserMessage: null,
@@ -111,8 +104,6 @@ class Memory {
       this.data.innerThoughts = (this.data.innerThoughts || []).slice(-MAX_INNER_THOUGHTS);
       if (!this.data.neurons) this.data.neurons = {};
       if (!Array.isArray(this.data.synapses)) this.data.synapses = [];
-      if (!this.data.state.hormones) this.data.state.hormones = { ...DEFAULT_HORMONES };
-      if (!this.data.state.emotions) this.data.state.emotions = { ...DEFAULT_EMOTIONS };
       if (!Array.isArray(this.data.state.goals)) this.data.state.goals = [];
       this.data.state.goals = (this.data.state.goals || []).slice(-MAX_GOALS);
       if (!Array.isArray(this.data.episodes)) this.data.episodes = [];
@@ -515,16 +506,7 @@ class Memory {
     this.data.state.selfInstructions = (current.concat(added)).slice(-10);
   }
 
-  decayEmotions() {
-    const e = this.data.state.emotions || { ...DEFAULT_EMOTIONS };
-    const decay = (v) => Math.max(0, Math.min(1, (v || 0.3) * EMOTION_DECAY));
-    this.data.state.emotions = {
-      joy: decay(e.joy),
-      frustration: decay(e.frustration),
-      interest: decay(e.interest),
-      confusion: decay(e.confusion),
-    };
-  }
+  decayEmotions() { /* no-op: emotions removed for speed */ }
 
   setLastError(msg) {
     if (!this.data.state) this.data.state = {};
@@ -673,8 +655,6 @@ Capabilities: ${caps}`;
       neurons,
       synapses,
       state: this.data.state,
-      hormones: (this.data.state || {}).hormones || DEFAULT_HORMONES,
-      emotions: (this.data.state || {}).emotions || DEFAULT_EMOTIONS,
     };
   }
 
@@ -758,25 +738,7 @@ Capabilities: ${caps}`;
     }
   }
 
-  /** If cortisol above threshold for enough ticks, halve all hormones. Call from loop after decay. */
-  checkHormoneReset(cortisolThreshold = 0.9, ticksRequired = 10) {
-    const h = this.data.state.hormones || { ...DEFAULT_HORMONES };
-    if ((h.cortisol || 0) >= cortisolThreshold) {
-      this._cortisolHighTicks = (this._cortisolHighTicks || 0) + 1;
-      if (this._cortisolHighTicks >= ticksRequired) {
-        const half = (v) => Math.max(0, Math.min(1, (v ?? 0.5) * 0.5));
-        this.data.state.hormones = {
-          dopamine: half(h.dopamine),
-          cortisol: half(h.cortisol),
-          serotonin: half(h.serotonin),
-        };
-        this._cortisolHighTicks = 0;
-        this.setState({ hormones: this.data.state.hormones });
-      }
-    } else {
-      this._cortisolHighTicks = 0;
-    }
-  }
+  checkHormoneReset() { /* no-op: hormones removed for speed */ }
 
   /** Append an audit log entry (type, args, outcome) to audit_log.json. */
   async addAuditLog(entry) {

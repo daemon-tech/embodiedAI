@@ -13,7 +13,6 @@ async function run() {
 
   const state = memory.getState();
   if (!state || typeof state !== 'object') throw new Error('getState returns object');
-  if (!state.hormones) throw new Error('default hormones');
 
   memory.addThought('hello', { action: 'think' });
   const thoughts = memory.getRecentThoughts(5);
@@ -29,13 +28,6 @@ async function run() {
   const raw = await fs.readFile(filePath, 'utf8');
   const parsed = JSON.parse(raw);
   if (!parsed.thoughts || parsed.thoughts.length < 1) throw new Error('persisted thoughts');
-
-  memory.data.state.hormones.cortisol = 0.95;
-  memory._cortisolHighTicks = 9;
-  memory.checkHormoneReset(0.9, 10);
-  if (memory._cortisolHighTicks !== 0) throw new Error('hormone reset should zero ticks after 10');
-  const h = memory.getState().hormones;
-  if (h.cortisol >= 0.5) throw new Error('cortisol should be halved');
 
   const auditPath = path.join(tmpDir, 'audit_log.json');
   const memWithAudit = new Memory(filePath, null, null, auditPath);

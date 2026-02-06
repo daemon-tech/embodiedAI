@@ -285,49 +285,12 @@
     v('v-last-tick-ms', m.latency && m.latency.lastTickMs != null ? m.latency.lastTickMs : null);
   }
 
-  let lastLivingState = { hormones: {}, emotions: {}, stats: {}, living: {} };
-
-  function updateHormoneBars(h) {
-    if (!h) return;
-    const pct = (v) => Math.round((v ?? 0.5) * 100);
-    const set = (id, v) => {
-      const el = document.getElementById(id);
-      if (el) {
-        el.style.width = pct(v) + '%';
-        const wrap = el.closest('.vital-bar') || el.closest('.h-bar');
-        if (wrap) wrap.setAttribute('aria-valuenow', pct(v));
-      }
-    };
-    set('bar-dopamine', h.dopamine);
-    set('bar-cortisol', h.cortisol);
-    set('bar-serotonin', h.serotonin);
-    const fmt = (v) => (v ?? 0).toFixed(2);
-    const setVal = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = fmt(v); };
-    setVal('val-dopamine', h.dopamine);
-    setVal('val-cortisol', h.cortisol);
-    setVal('val-serotonin', h.serotonin);
-    if (window.scene3d && window.scene3d.update) window.scene3d.update(h);
-  }
+  let lastLivingState = { stats: {}, living: {} };
 
   function updateVitalsDrawer(state) {
     if (!state) state = lastLivingState;
-    const h = state.hormones || {};
-    const e = state.emotions || {};
     const s = state.stats || {};
     const liv = state.living || {};
-    const pct = (v) => Math.round((v ?? 0) * 100);
-    const setBar = (id, v, color) => {
-      const el = document.getElementById(id);
-      if (el) { el.style.width = pct(v) + '%'; if (color) el.style.background = color; }
-    };
-    const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = (v ?? 0).toFixed(2); };
-    setBar('dmini-d-fill', h.dopamine, '#00ff88'); setVal('v-dopamine', h.dopamine);
-    setBar('dmini-c-fill', h.cortisol, '#ff3355'); setVal('v-cortisol', h.cortisol);
-    setBar('dmini-s-fill', h.serotonin, '#ffaa00'); setVal('v-serotonin', h.serotonin);
-    setBar('emo-joy', e.joy, '#00ff88'); setVal('v-joy', e.joy);
-    setBar('emo-interest', e.interest, '#ffaa00'); setVal('v-interest', e.interest);
-    setBar('emo-frustration', e.frustration, '#ff3355'); setVal('v-frustration', e.frustration);
-    setBar('emo-confusion', e.confusion, '#9e9e9e'); setVal('v-confusion', e.confusion);
     const nEl = document.getElementById('v-neurons');
     const synEl = document.getElementById('v-synapses');
     const thEl = document.getElementById('v-thoughts');
@@ -350,12 +313,61 @@
     el.textContent = remain + ' s';
   }
 
+  const stepsHistory = [];
+  const MAX_STEPS = 30;
+  function appendStep(msg) {
+    const stepsList = document.getElementById('steps-list');
+    const stepsEmpty = document.getElementById('steps-empty');
+    if (!stepsList) return;
+    const payload = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};
+    const detail = String(payload.path || payload.url || payload.target || payload.command || '').slice(0, 120);
+    stepsHistory.push({ t: Date.now(), action: msg.action, payload, reason: msg.reason, thought: msg.thought });
+    if (stepsHistory.length > MAX_STEPS) stepsHistory.shift();
+    const el = document.createElement('div');
+    el.className = 'step-item';
+    el.innerHTML =
+      '<div class="step-meta">' +
+      '<span class="step-time" title="' + escapeHtml(formatTime(Date.now())) + '">just now</span>' +
+      (msg.action ? '<span class="step-action">' + escapeHtml(msg.action) + '</span>' : '') +
+      '</div>' +
+      (detail ? '<div class="step-detail">' + escapeHtml(detail) + '</div>' : '') +
+      (msg.reason ? '<div class="step-detail">Reason: ' + escapeHtml(String(msg.reason).slice(0, 150)) + '</div>' : '') +
+      (msg.thought ? '<div class="step-thought">' + escapeHtml(String(msg.thought).slice(0, 200)) + (String(msg.thought).length > 200 ? '…' : '') + '</div>' : '');
+    stepsList.insertBefore(el, stepsList.firstChild);
+    while (stepsList.children.length > MAX_STEPS) stepsList.removeChild(stepsList.lastChild);
+    if (stepsEmpty) stepsEmpty.style.display = 'none';
+  }
+
+  const terminalHistory = [];
+  const MAX_TERMINAL_HISTORY = 50;
+  function appendTerminalEntry(data) {
+    terminalHistory.push({ command: data.command, cwd: data.cwd, stdout: data.stdout, stderr: data.stderr, ok: data.ok, ts: data.ts != null ? data.ts : Date.now() });
+    if (terminalHistory.length > MAX_TERMINAL_HISTORY) terminalHistory.shift();
+    const logEl = document.getElementById('terminal-log');
+    const emptyEl = document.getElementById('terminal-empty');
+    if (!logEl) return;
+    const ts = data.ts != null ? data.ts : Date.now();
+    const timeStr = formatTime(ts);
+    const cmd = (data.command != null ? String(data.command) : '').trim();
+    const stdout = (data.stdout != null ? String(data.stdout) : '').trim();
+    const stderr = (data.stderr != null ? String(data.stderr) : '').trim();
+    const ok = data.ok === true;
+    const div = document.createElement('div');
+    div.className = 'terminal-entry' + (ok ? '' : ' terminal-error');
+    div.innerHTML =
+      '<div class="term-time">' + escapeHtml(timeStr) + (data.cwd ? ' · ' + escapeHtml(String(data.cwd).slice(-50)) : '') + '</div>' +
+      '<div class="term-cmd">$ ' + escapeHtml(cmd) + '</div>' +
+      (stdout ? '<pre class="term-out">' + escapeHtml(stdout) + '</pre>' : '') +
+      (stderr ? '<pre class="term-err">' + escapeHtml(stderr) + '</pre>' : '');
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+    if (emptyEl) emptyEl.style.display = 'none';
+  }
+
   unsubscribes.push(window.api.onThought((msg) => {
     setCurrentThought(msg);
-    if (msg.hormones) updateHormoneBars(msg.hormones);
+    appendStep(msg);
     lastLivingState = {
-      hormones: msg.hormones || lastLivingState.hormones,
-      emotions: msg.emotions || lastLivingState.emotions,
       stats: msg.stats || lastLivingState.stats,
       living: msg.living || lastLivingState.living,
     };
@@ -367,6 +379,10 @@
     refreshInnerThoughts();
     refreshStats();
   }));
+
+  if (window.api.onTerminalOutput) {
+    unsubscribes.push(window.api.onTerminalOutput(appendTerminalEntry));
+  }
 
   if (window.api.onInnerThought) {
     unsubscribes.push(window.api.onInnerThought((msg) => {
@@ -404,11 +420,6 @@
       });
     }));
   }
-
-  unsubscribes.push(window.api.onHormones((h) => {
-    updateHormoneBars(h);
-    if (window.scene3d && window.scene3d.update) window.scene3d.update(h);
-  }));
 
   unsubscribes.push(window.api.onLog(() => {
     refreshLogs();
@@ -653,6 +664,89 @@
     feedbackDown.addEventListener('click', () => { window.api.humanFeedback('down', ''); showToast('Feedback: negative — she will adjust'); });
   }
 
+  const copyForCursorBtn = document.getElementById('copy-for-cursor');
+  if (copyForCursorBtn && window.api.getDebugInfo) {
+    copyForCursorBtn.addEventListener('click', async () => {
+      try {
+        const info = await window.api.getDebugInfo();
+        if (info && info.error) {
+          showToast('Failed: ' + info.error);
+          return;
+        }
+        const lines = [];
+        lines.push('# Laura debug info — paste this in Cursor so the AI can fix or debug');
+        lines.push('Exported: ' + new Date().toISOString());
+        lines.push('');
+        if (info && info.lastError) {
+          lines.push('## Last error');
+          lines.push(info.lastError);
+          lines.push('');
+        }
+        if (info && info.activity) {
+          lines.push('## Current activity');
+          lines.push(typeof info.activity === 'string' ? info.activity : JSON.stringify(info.activity));
+          lines.push('');
+        }
+        if (info && info.living) {
+          lines.push('## Loop');
+          lines.push('paused: ' + !!info.living.paused + ', nextIntervalMs: ' + (info.living.nextIntervalMs || '—'));
+          lines.push('');
+        }
+        if (info && info.memoryStats) {
+          lines.push('## Memory stats');
+          lines.push('neurons: ' + (info.memoryStats.neurons || 0) + ', synapses: ' + (info.memoryStats.synapses || 0) + ', thoughts: ' + (info.memoryStats.thoughts || 0) + ', episodes: ' + (info.memoryStats.episodes || 0));
+          lines.push('');
+        }
+        if (info && info.goals && info.goals.length > 0) {
+          lines.push('## Active goals');
+          info.goals.forEach(g => lines.push('- ' + (g.text || g)));
+          lines.push('');
+        }
+        if (info && info.thoughts && info.thoughts.length > 0) {
+          lines.push('## Recent thoughts');
+          info.thoughts.slice(0, 25).forEach(t => {
+            const a = (t.action || t.type) || '';
+            const text = (t.text || '').slice(0, 300);
+            lines.push('[' + a + '] ' + text);
+          });
+          lines.push('');
+        }
+        if (stepsHistory && stepsHistory.length > 0) {
+          lines.push('## Live steps (last ' + stepsHistory.length + ')');
+          stepsHistory.slice().reverse().forEach((s, i) => {
+            const detail = String(s.payload.path || s.payload.command || s.payload.url || s.payload.target || '').slice(0, 80);
+            lines.push((i + 1) + '. ' + (s.action || '') + (detail ? ' ' + detail : '') + (s.reason ? ' — ' + String(s.reason).slice(0, 80) : ''));
+            if (s.thought) lines.push('   Thought: ' + String(s.thought).slice(0, 150));
+          });
+          lines.push('');
+        }
+        if (info && info.logs && info.logs.length > 0) {
+          lines.push('## Activity log');
+          info.logs.slice(0, 40).forEach(l => {
+            const t = l.type || l.action || 'log';
+            const p = [l.path, l.url, l.command, l.target].filter(Boolean).join(' ');
+            lines.push(t + (p ? ' ' + p.slice(0, 100) : ''));
+          });
+          lines.push('');
+        }
+        if (terminalHistory && terminalHistory.length > 0) {
+          lines.push('## Terminal output');
+          terminalHistory.forEach(te => {
+            lines.push('$ ' + (te.command || ''));
+            if (te.stdout) lines.push(te.stdout);
+            if (te.stderr) lines.push('stderr: ' + te.stderr);
+            lines.push('');
+          });
+        }
+        const text = lines.join('\n');
+        await navigator.clipboard.writeText(text);
+        showToast('Copied — paste in Cursor so the AI can help fix or debug');
+      } catch (e) {
+        showToast('Copy failed: ' + (e.message || 'unknown'));
+      }
+    });
+  }
+
   if (window.api.onChatThinking) {
     unsubscribes.push(window.api.onChatThinking((msg) => {
       const el = document.getElementById('chat-thinking-current');
@@ -791,11 +885,6 @@
       updateFocusButton();
       updateContinuousButton();
     } catch (_) {}
-    try {
-      const h = await window.api.getHormones();
-      updateHormoneBars(h);
-      if (window.scene3d && window.scene3d.update) window.scene3d.update(h);
-    } catch (_) {}
     await refreshStats();
     await refreshThoughts();
     await refreshLogs();
@@ -806,8 +895,7 @@
     try {
       const living = await window.api.getLivingState();
       if (living) {
-        lastLivingState = { hormones: living.hormones, emotions: living.emotions, stats: living.stats, living: living.living };
-        updateHormoneBars(living.hormones);
+        lastLivingState = { stats: living.stats || {}, living: living.living || {} };
         updateVitalsDrawer(lastLivingState);
         const st = living.loopStatus;
         if (statusDot && statusText) {

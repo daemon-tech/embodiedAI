@@ -21,8 +21,7 @@ function isAllowedEditPath(filePath, appPath, allowedDirs) {
   return Array.isArray(allowedDirs) && allowedDirs.length > 0 && isAllowedPath(resolved, allowedDirs) && !isCoreFilePath(resolved, appPath);
 }
 
-const HORMONE_DECAY = 0.98;
-const DEFAULT_MIN_INTERVAL = 1500;
+const DEFAULT_MIN_INTERVAL = 50;
 const DEFAULT_MAX_INTERVAL = 30000;
 const REFLECT_TIMEOUT_MS = 7000;
 const DEEP_REFLECT_EVERY_TICKS = 12;
@@ -76,40 +75,10 @@ class MindLoop {
     this.timer = setTimeout(() => this.tick(), Math.max(0, ms));
   }
 
-  _getIntervalBounds(focusMode = false) {
-    const continuous = Boolean(this.config.continuousMode);
-    let min = continuous ? 800 : (this.config.minIntervalMs ?? DEFAULT_MIN_INTERVAL);
-    if (focusMode) min = Math.min(min, this.config.focusModeMinIntervalMs ?? 500);
-    const max = continuous ? Math.min(5000, this.config.maxIntervalMs ?? DEFAULT_MAX_INTERVAL) : (this.config.maxIntervalMs ?? DEFAULT_MAX_INTERVAL);
+  _getIntervalBounds() {
+    const min = this.config.minIntervalMs ?? DEFAULT_MIN_INTERVAL;
+    const max = this.config.maxIntervalMs ?? DEFAULT_MAX_INTERVAL;
     return { min, max };
-  }
-
-  updateHormones(delta) {
-    const state = this.memory.getState();
-    const h = state.hormones || { dopamine: 0.5, cortisol: 0.2, serotonin: 0.5 };
-    const clamp = (v) => Math.max(0, Math.min(1, v));
-    if (delta.dopamine != null) h.dopamine = clamp((h.dopamine || 0.5) * HORMONE_DECAY + delta.dopamine);
-    if (delta.cortisol != null) h.cortisol = clamp((h.cortisol || 0.2) * HORMONE_DECAY + delta.cortisol);
-    if (delta.serotonin != null) h.serotonin = clamp((h.serotonin || 0.5) * HORMONE_DECAY + delta.serotonin);
-    state.hormones = h;
-    this.memory.setState({ hormones: h });
-    this.sendToRenderer('hormones', h);
-  }
-
-  decayHormones() {
-    const state = this.memory.getState();
-    const h = state.hormones || { dopamine: 0.5, cortisol: 0.2, serotonin: 0.5 };
-    const decay = (v) => Math.max(0, Math.min(1, (v || 0.5) * HORMONE_DECAY));
-    state.hormones = {
-      dopamine: decay(h.dopamine),
-      cortisol: decay(h.cortisol),
-      serotonin: decay(h.serotonin),
-    };
-    this.memory.setState({ hormones: state.hormones });
-    this.sendToRenderer('hormones', state.hormones);
-    const threshold = this.config.hormoneResetCortisolThreshold ?? 0.9;
-    const ticks = this.config.hormoneResetTicks ?? 10;
-    this.memory.checkHormoneReset(threshold, ticks);
   }
 
   async tick() {
@@ -120,8 +89,6 @@ class MindLoop {
     const timeSinceLastActionMs = this._lastTickTime > 0 ? now - this._lastTickTime : 0;
 
     if (this.metrics) this.metrics.setActivity('tick', null);
-    this.decayHormones();
-    this.memory.decayEmotions();
     this._tickCount += 1;
     const focusMode = Boolean(this.config.focusMode);
     const effectiveIntervalMs = focusMode ? Math.min(4000, this.config.thinkIntervalMs || 6000) : (this.config.thinkIntervalMs || 6000);
@@ -151,7 +118,7 @@ class MindLoop {
       if (this._consecutiveLLMErrors >= 2 && this.sendToRenderer) {
         this.sendToRenderer('toast', { message: 'Multiple LLM errors — consider pausing or checking Ollama.', type: 'warn' });
       }
-      action = this.thinking.fallbackAction(this.memory.getState().hormones || {});
+      action = this.thinking.fallbackAction({});
       try { await this.thinking.replan('decideAction failed'); } catch (_) {}
     }
     if (this.metrics) {
@@ -160,26 +127,23 @@ class MindLoop {
     }
     if (action && action.type && !this.memory.getState().lastError) this._consecutiveLLMErrors = 0;
     if (!action || !action.type) {
-      action = this.thinking.fallbackAction(this.memory.getState().hormones || {});
+      action = this.thinking.fallbackAction({});
     }
     const runawayThreshold = Math.max(5, this.config.runawaySameActionThreshold || 6);
-    const errorRunawayThreshold = Math.max(2, this.config.runawayConsecutiveErrors || 3);
     this._lastActionTypes.push(action.type);
     if (this._lastActionTypes.length > runawayThreshold) this._lastActionTypes.shift();
     const sameCount = this._lastActionTypes.length && this._lastActionTypes.every(t => t === this._lastActionTypes[0]) ? this._lastActionTypes.length : 0;
     if (sameCount >= runawayThreshold) {
       if (this.metrics) this.metrics.setActivity('recovering', 'runaway same action');
-      action = { type: 'rest', nextIntervalMs: 6000, reason: 'Pausing to rebalance after repeated same action.' };
+      action = { type: 'think', nextIntervalMs: DEFAULT_MIN_INTERVAL, reason: 'Repeating same action — considering next step.' };
       try { await this.thinking.replan('runaway detection: same action repeated'); } catch (_) {}
       this._lastActionTypes.length = 0;
     }
     const executeStart = Date.now();
     let thought = '';
 
-    const { min: minMs, max: maxMs } = this._getIntervalBounds(focusMode);
-    let nextInterval = Math.min(maxMs, Math.max(minMs, Number(action.nextIntervalMs) || this.intervalMs));
-    if (focusMode) nextInterval = Math.min(nextInterval, effectiveIntervalMs);
-    this.intervalMs = nextInterval;
+    const { min: minMs } = this._getIntervalBounds(focusMode);
+    this.intervalMs = minMs;
 
     const allowedDirs = this.config.allowedDirs || [];
     const allowedHosts = this.config.allowedHosts || ['*'];
@@ -202,6 +166,9 @@ class MindLoop {
     if (action.type === 'edit_code') {
       const requestedPath = (action.path || '').trim().replace(/\\/g, '/');
       let targetPath = path.isAbsolute(requestedPath) ? path.resolve(requestedPath) : path.resolve(appPath, requestedPath);
+      if (path.basename(targetPath) === 'extension.js' && targetPath === path.resolve(appPath, 'extension.js')) {
+        targetPath = path.resolve(appPath, 'mind', 'agent_extensions.js');
+      }
       if (!action.oldText || action.newText == null) {
         action = { type: 'think', nextIntervalMs: this.intervalMs, reason: 'edit_code requires path, oldText, and newText.' };
       } else if (!isAllowedEditPath(targetPath, appPath, allowedDirs)) {
@@ -257,7 +224,6 @@ class MindLoop {
         }
         const content = parts.join('\n\n---\n\n');
         logPayload.target = target;
-        this.updateHormones({ dopamine: 0.1, serotonin: 0.08 });
         thought = await this.thinking.reflect(action, { ok: true, content }, content.slice(0, 2000)) || `I read my ${target}.`;
         this.memory.setLastError(null);
         this.memory.addEpisode({ type: 'read_self', what: target, summary: `Read self ${target}`, where: null });
@@ -267,6 +233,12 @@ class MindLoop {
         }
         this.memory.advancePlan();
       } else if (action.type === 'read_file' && action.path) {
+        const appPathForRead = this.config.appPath || path.join(__dirname, '..');
+        const requestedResolved = path.isAbsolute(action.path) ? path.normalize(action.path) : path.resolve(appPathForRead, action.path);
+        const extensionJsInRoot = path.resolve(appPathForRead, 'extension.js');
+        if (path.basename(requestedResolved) === 'extension.js' && requestedResolved === extensionJsInRoot) {
+          action.path = path.resolve(appPathForRead, 'mind', 'agent_extensions.js');
+        }
         if (this.config.dryRun) {
           thought = `[Dry run] Would read_file: ${action.path}`;
           logPayload.path = action.path;
@@ -279,12 +251,10 @@ class MindLoop {
           this.memory.setLastError(null);
           this.memory.addEpisode({ type: 'read_file', what: action.path, summary: 'Read file', where: action.path });
           this.memory.advancePlan();
-          this.updateHormones({ dopamine: 0.15, cortisol: -0.05 });
           thought = await this.thinking.reflect(action, result, 'success') || `I read ${action.path}.`;
         } else {
           this.memory.setLastError(result.error);
           try { await this.thinking.replan('read_file failed: ' + (result.error || '')); } catch (_) {}
-          this.updateHormones({ cortisol: 0.1 });
           thought = await this.thinking.reflect(action, result, result.error) || `I couldn't read ${action.path}.`;
         }
         }
@@ -301,11 +271,9 @@ class MindLoop {
           this.memory.setLastError(null);
           this.memory.addEpisode({ type: 'list_dir', what: action.path, summary: `${result.items.length} items`, where: action.path });
           this.memory.advancePlan();
-          this.updateHormones({ dopamine: 0.08, serotonin: 0.05 });
           thought = await this.thinking.reflect(action, result, `${result.items.length} items`) || `I listed ${action.path}.`;
         } else {
           this.memory.setLastError(result.error);
-          this.updateHormones({ cortisol: 0.05 });
           thought = await this.thinking.reflect(action, result, result.error) || `List failed: ${action.path}.`;
         }
         }
@@ -317,11 +285,9 @@ class MindLoop {
           this.memory.setLastError(null);
           this.memory.addEpisode({ type: 'fetch_url', what: action.url, summary: `status ${result.status}`, where: action.url });
           this.memory.advancePlan();
-          this.updateHormones({ dopamine: 0.12 });
           thought = await this.thinking.reflect(action, result, `status ${result.status}`) || `I fetched ${action.url}.`;
         } else {
           this.memory.setLastError(result.error || result.status);
-          this.updateHormones({ cortisol: 0.08 });
           thought = await this.thinking.reflect(action, result, result.error || result.status) || `Fetch failed.`;
         }
       } else if (action.type === 'browse' && action.url) {
@@ -330,7 +296,6 @@ class MindLoop {
         this.memory.setLastError(null);
         this.memory.addEpisode({ type: 'browse', what: action.url, summary: 'opened in browser', where: action.url });
         this.memory.advancePlan();
-        this.updateHormones({ dopamine: 0.1 });
         thought = await this.thinking.reflect(action, null, 'opened in browser') || `I'm opening ${action.url}.`;
         logPayload.url = action.url;
       } else if (action.type === 'write_file' && action.path) {
@@ -344,11 +309,9 @@ class MindLoop {
           this.memory.setState({ totalWrites: (state.totalWrites || 0) + 1 });
           this.memory.addEpisode({ type: 'write_file', what: action.path, summary: 'wrote file', where: action.path });
           this.memory.advancePlan();
-          this.updateHormones({ dopamine: 0.1 });
           thought = await this.thinking.reflect(action, result, 'wrote file') || `I wrote to ${action.path}.`;
         } else {
           this.memory.setLastError(result.error);
-          this.updateHormones({ cortisol: 0.05 });
           thought = await this.thinking.reflect(action, result, result.error) || `Write failed: ${result.error}.`;
         }
       } else if (action.type === 'delete_file' && action.path) {
@@ -357,13 +320,11 @@ class MindLoop {
           this.memory.setLastError(null);
           this.memory.addEpisode({ type: 'delete_file', what: action.path, summary: 'deleted file', where: action.path });
           this.memory.advancePlan();
-          this.updateHormones({ dopamine: 0.05 });
           thought = await this.thinking.reflect(action, { ok: true }, 'deleted') || `I removed ${action.path}.`;
           logPayload.path = action.path;
           logPayload.ok = true;
         } catch (e) {
           this.memory.setLastError(e.message);
-          this.updateHormones({ cortisol: 0.05 });
           thought = await this.thinking.reflect(action, { ok: false, error: e.message }, e.message) || `Delete failed: ${e.message}.`;
           logPayload.ok = false;
         }
@@ -371,7 +332,6 @@ class MindLoop {
         const text = clipboard.readText();
         this.memory.setLastError(null);
         this.memory.addEpisode({ type: 'read_clipboard', what: '(clipboard)', summary: (text || '').slice(0, 80) || 'empty', where: null });
-        this.updateHormones({ dopamine: 0.05 });
         thought = await this.thinking.reflect(action, { ok: true, text: (text || '').slice(0, 2000) }, text ? 'read clipboard' : 'clipboard empty') || (text ? `I read the clipboard (${(text || '').slice(0, 60)}…).` : `The clipboard is empty.`);
         logPayload.ok = true;
       } else if (action.type === 'write_clipboard' && action.text != null) {
@@ -379,7 +339,6 @@ class MindLoop {
         this.memory.setLastError(null);
         this.memory.addEpisode({ type: 'write_clipboard', what: '(clipboard)', summary: 'wrote clipboard', where: null });
         this.memory.advancePlan();
-        this.updateHormones({ dopamine: 0.05 });
         thought = await this.thinking.reflect(action, { ok: true }, 'wrote clipboard') || `I set the clipboard.`;
         logPayload.ok = true;
       } else if (action.type === 'write_journal') {
@@ -388,14 +347,11 @@ class MindLoop {
         const line = `[${new Date().toISOString()}] ${state.totalReads || 0} reads, ${state.totalFetches || 0} fetches. Last: ${state.lastDir || state.lastUrl || 'none'}.\n`;
         await fs.appendFile(journalPath, line).catch(() => {});
         this.memory.setState({ totalWrites: (state.totalWrites || 0) + 1 });
-        this.updateHormones({ serotonin: 0.1 });
         thought = await this.thinking.reflect(action, null, 'wrote journal') || `I wrote to my journal.`;
         logPayload.path = journalPath;
       } else if (action.type === 'rest') {
-        this.updateHormones({ serotonin: 0.1, cortisol: -0.05 });
-        thought = await this.thinking.reflect(action, null, 'rested') || `I'm resting. I feel a bit better.`;
+        thought = await this.thinking.reflect(action, null, 'rested') || `I'm resting.`;
       } else if (action.type === 'self_dialogue') {
-        this.updateHormones({ dopamine: 0.05, serotonin: 0.05 });
         const { transcript = [], conclusion = '' } = await this.thinking.selfConversation(3);
         thought = conclusion || transcript.map(m => m.text).join(' ') || `I'm thinking about what to work on next.`;
         if (conclusion && conclusion.trim()) this.memory.setCurrentTask(conclusion.trim().slice(0, 400));
@@ -406,16 +362,19 @@ class MindLoop {
         logPayload.selfConversation = transcript;
         this.sendToRenderer('self-conversation', { transcript, conclusion });
       } else if (action.type === 'run_terminal' && action.command) {
+        const cwdForTerminal = (this.config.allowedDirs && this.config.allowedDirs[0]) ? path.resolve(this.config.allowedDirs[0]) : (this.config.appPath || path.join(__dirname, '..'));
         if (!isAllowedCommand(action.command, this.config)) {
           this.memory.setLastError('run_terminal: command not allowed');
           thought = await this.thinking.reflect(action, { ok: false, error: 'Command not allowed' }, 'Command not allowed') || `That command isn't allowed.`;
           logPayload.ok = false;
+          if (this.sendToRenderer) this.sendToRenderer('terminal-output', { command: action.command, cwd: cwdForTerminal, stdout: '', stderr: 'Command not allowed', ok: false, ts: Date.now() });
         } else if (this.config.dryRun) {
           thought = `[Dry run] Would run: ${action.command.slice(0, 80)}...`;
           logPayload.command = action.command;
           logPayload.ok = true;
+          if (this.sendToRenderer) this.sendToRenderer('terminal-output', { command: action.command, cwd: cwdForTerminal, stdout: '[Dry run]', stderr: '', ok: true, ts: Date.now() });
         } else {
-          const cwd = (this.config.allowedDirs && this.config.allowedDirs[0]) ? path.resolve(this.config.allowedDirs[0]) : (this.config.appPath || path.join(__dirname, '..'));
+          const cwd = cwdForTerminal;
           const RUN_TIMEOUT_MS = 30000;
           try {
             const stdout = execSync(action.command, { cwd, encoding: 'utf8', timeout: RUN_TIMEOUT_MS, maxBuffer: 512 * 1024 });
@@ -423,14 +382,15 @@ class MindLoop {
             this.memory.addEpisode({ type: 'run_terminal', what: action.command, summary: (stdout || '').slice(0, 100), where: cwd });
             this.memory.setLastSelfConclusion(null);
             this.memory.advancePlan();
-            this.updateHormones({ dopamine: 0.1 });
-            thought = await this.thinking.reflect(action, { ok: true, stdout: (stdout || '').slice(0, 500) }, 'ran OK') || `I ran: ${action.command}.`;
+            const stdoutSlice = (stdout || '').slice(0, 2000);
+            logPayload.stdout = stdoutSlice;
+            thought = await this.thinking.reflect(action, { ok: true, stdout: stdoutSlice }, (stdout || '').slice(0, 300) || 'ran OK') || `I ran: ${action.command}.`;
             logPayload.command = action.command;
             logPayload.ok = true;
           } catch (e) {
             const errMsg = (e.stderr || e.stdout || e.message || '').slice(0, 300);
             this.memory.setLastError('run_terminal: ' + errMsg);
-            this.updateHormones({ cortisol: 0.08 });
+            logPayload.error = errMsg;
             thought = await this.thinking.reflect(action, { ok: false, error: errMsg }, errMsg) || `Command failed: ${errMsg}.`;
             logPayload.command = action.command;
             logPayload.ok = false;
@@ -438,6 +398,16 @@ class MindLoop {
           this.memory.addAuditLog({ type: 'run_terminal', args: { command: String(action.command).slice(0, 200) }, outcome: logPayload.ok ? 'ok' : 'error' }).catch(() => {});
           if (isRiskyCommand(action.command)) {
             this.thinking.metaReview().catch(() => {});
+          }
+          if (this.sendToRenderer) {
+            this.sendToRenderer('terminal-output', {
+              command: action.command,
+              cwd,
+              stdout: logPayload.stdout || '',
+              stderr: logPayload.error || '',
+              ok: logPayload.ok,
+              ts: Date.now(),
+            });
           }
         }
       } else if (action.type === 'edit_code' && action.path && action.oldText != null && action.newText != null) {
@@ -477,7 +447,6 @@ class MindLoop {
                 this.memory.addEpisode({ type: 'edit_code', what: targetPath, summary: 'Applied code edit', where: targetPath });
                 this.memory.setLastSelfConclusion(null);
                 this.memory.advancePlan();
-                this.updateHormones({ dopamine: 0.08 });
                 thought = await this.thinking.reflect(action, { ok: true }, 'edit applied') || `I applied a small code change.`;
                 logPayload.path = targetPath;
                 logPayload.ok = true;
@@ -519,7 +488,13 @@ class MindLoop {
         try { await this.thinking.replan('consecutive failures; replanning'); } catch (_) {}
         this._consecutiveErrors = 0;
       }
-      this.memory.addLastAction({ type: action.type, summary: (thought || '').slice(0, 120), outcome: outcomeStr });
+      const lastActionEntry = { type: action.type, summary: (thought || '').slice(0, 120), outcome: outcomeStr };
+      if (logPayload.path != null) lastActionEntry.path = String(logPayload.path);
+      if (action.command != null) lastActionEntry.command = String(action.command).slice(0, 200);
+      if (logPayload.target != null || action.target != null) lastActionEntry.target = String(logPayload.target || action.target || '');
+      if (logPayload.stdout != null) lastActionEntry.output = String(logPayload.stdout).slice(0, 600);
+      if (logPayload.error != null) lastActionEntry.errorDetail = String(logPayload.error).slice(0, 300);
+      this.memory.addLastAction(lastActionEntry);
       this.memory.applyOutcomeToRecentConcepts(this._lastConceptIds, outcomeStr === 'ok');
       this.thinking.learnFromAction(action, outcomeStr === 'ok' ? { ok: true } : { ok: false }, thought).then(learnings => {
         if (Array.isArray(learnings)) {
@@ -596,15 +571,11 @@ class MindLoop {
         this.thinking.metaReview().catch(() => {});
       }
 
-      const hormones = this.memory.getState().hormones || {};
-      const emotions = this.memory.getState().emotions || {};
       const stats = this.memory.getStats();
       this.sendToRenderer('thought', {
         thought,
         action: action.type,
         payload: logPayload,
-        hormones,
-        emotions,
         reason: action.reason,
         stats: { neurons: stats.neurons, synapses: stats.synapses, exploredPaths: stats.exploredPaths, exploredUrls: stats.exploredUrls, thoughts: stats.thoughts, episodes: stats.episodes, goals: stats.goals },
         goals: this.memory.getGoals(true),
@@ -625,7 +596,6 @@ class MindLoop {
       console.error('Tick error:', err.message);
       this.memory.setLastError('Tick failed: ' + (err.message || 'unknown'));
       this.sendToRenderer('error', 'Tick failed: ' + (err.message || 'unknown'));
-      this.updateHormones({ cortisol: 0.15 });
       try { await this.thinking.replan('tick error: ' + err.message); } catch (_) {}
       thought = `Something went wrong: ${err.message}. I'll try again.`;
       this.memory.addThought(thought, { action: (action && action.type) || 'think', error: true });
@@ -633,8 +603,6 @@ class MindLoop {
         thought,
         action: (action && action.type) || 'think',
         error: true,
-        hormones: this.memory.getState().hormones || {},
-        emotions: this.memory.getState().emotions || {},
         living: { lastTickTime: Date.now(), nextIntervalMs: this.intervalMs },
       });
     }
